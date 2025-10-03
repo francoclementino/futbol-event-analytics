@@ -1,0 +1,23 @@
+# Archivos de datos
+*.parquet
+data/
+*.csv
+*.xlsx
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Streamlit
+.streamlit/
+
+# Carpetas de trabajo
+carpeta pruebas/
+Codigos/
+
+# IDE
+.vscode/
+.idea/
