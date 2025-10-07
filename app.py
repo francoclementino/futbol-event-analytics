@@ -1,5 +1,5 @@
 """
-app.py - Mapa de calor rojo y tabla con formato condicional
+app.py - Sistema completo con filtros mejorados y métricas avanzadas
 """
 
 import streamlit as st
@@ -52,7 +52,6 @@ def create_pitch():
     for x in [0, L]:
         d = 1 if x == 0 else -1
         shapes.extend([
-            dict(type="rect", x0=x, y0=W/2-20.16, x1=x+d*16.5, y1=W/2+20.16, line=dict(color=lc, width=2), fillcolor="rgba(0,0,0,0)"),
             dict(type="rect", x0=x, y0=W/2-9.16, x1=x+d*5.5, y1=W/2+9.16, line=dict(color=lc, width=2), fillcolor="rgba(0,0,0,0)"),
             dict(type="line", x0=x, y0=W/2-3.66, x1=x, y1=W/2+3.66, line=dict(color=lc, width=3))
         ])
@@ -68,19 +67,13 @@ def create_pitch():
     return fig
 
 def get_zone_coordinates():
-    """Define coordenadas - CORREGIDO: arriba=izquierda, abajo=derecha"""
     zones = {
-        # DEFENSA (0-40)
-        'Def_Izq':    {'x0': 0,   'x1': 40,  'y0': 53.33, 'y1': 80},     # Arriba
-        'Def_Centro': {'x0': 0,   'x1': 40,  'y0': 26.67, 'y1': 53.33},  # Centro
-        'Def_Der':    {'x0': 0,   'x1': 40,  'y0': 0,     'y1': 26.67},  # Abajo
-        
-        # MEDIO (40-80)
+        'Def_Izq':    {'x0': 0,   'x1': 40,  'y0': 53.33, 'y1': 80},
+        'Def_Centro': {'x0': 0,   'x1': 40,  'y0': 26.67, 'y1': 53.33},
+        'Def_Der':    {'x0': 0,   'x1': 40,  'y0': 0,     'y1': 26.67},
         'Medio_Izq':    {'x0': 40,  'x1': 80,  'y0': 53.33, 'y1': 80},
         'Medio_Centro': {'x0': 40,  'x1': 80,  'y0': 26.67, 'y1': 53.33},
         'Medio_Der':    {'x0': 40,  'x1': 80,  'y0': 0,     'y1': 26.67},
-        
-        # ATAQUE (80-120)
         'Att_Izq':    {'x0': 80,  'x1': 120, 'y0': 53.33, 'y1': 80},
         'Att_Centro': {'x0': 80,  'x1': 120, 'y0': 26.67, 'y1': 53.33},
         'Att_Der':    {'x0': 80,  'x1': 120, 'y0': 0,     'y1': 26.67}
@@ -88,9 +81,6 @@ def get_zone_coordinates():
     return zones
 
 def plot_heatmap_zones(fig, df):
-    """Mapa de calor en escala ROJA con gradiente"""
-    
-    # Mapear nombres viejos a nuevos
     zone_mapping = {
         'Def_Izq': 'Def_Izq',
         'Def_Centro': 'Def_Centro',
@@ -103,7 +93,6 @@ def plot_heatmap_zones(fig, df):
         'Att_Der': 'Att_Der'
     }
     
-    # Contar eventos por zona
     df['zone_display'] = df['zone'].map(zone_mapping).fillna(df['zone'])
     zone_counts = df['zone_display'].value_counts().to_dict()
     max_count = max(zone_counts.values()) if zone_counts else 1
@@ -112,27 +101,20 @@ def plot_heatmap_zones(fig, df):
     
     for zone_name, coords in zones.items():
         count = zone_counts.get(zone_name, 0)
-        
-        # Escala de ROJO: más eventos = más intenso
         intensity = count / max_count
         
-        # Degradado de amarillo -> naranja -> rojo oscuro
         if intensity < 0.3:
-            # Amarillo claro
             color = f'rgba(255, 255, {int(100 + 155 * (1 - intensity/0.3))}, 0.5)'
         elif intensity < 0.6:
-            # Naranja
             adj_intensity = (intensity - 0.3) / 0.3
             red = 255
             green = int(255 - 100 * adj_intensity)
             color = f'rgba({red}, {green}, 0, 0.6)'
         else:
-            # Rojo oscuro
             adj_intensity = (intensity - 0.6) / 0.4
             red = int(255 - 55 * adj_intensity)
             color = f'rgba({red}, 0, 0, 0.7)'
         
-        # Agregar rectángulo
         fig.add_shape(
             type="rect",
             x0=coords['x0'], y0=coords['y0'],
@@ -142,7 +124,6 @@ def plot_heatmap_zones(fig, df):
             layer='below'
         )
         
-        # Texto
         center_x = (coords['x0'] + coords['x1']) / 2
         center_y = (coords['y0'] + coords['y1']) / 2
         
@@ -179,8 +160,6 @@ def add_arrows_batch(fig, df_subset, color, max_arrows=150):
             ))
 
 def plot_events_optimized(fig, df):
-    """Versión optimizada con puntos y flechas"""
-    
     df['hover_text'] = df.apply(lambda r: 
         f"<b>{r['type']}</b><br>"
         f"{r.get('playerName', 'N/A')}<br>"
@@ -189,7 +168,6 @@ def plot_events_optimized(fig, df):
         f"{r['outcomeType']}<br>"
         f"xT: {r.get('xT', 0):.3f}", axis=1)
     
-    # PÉRDIDAS
     df_perdida = df[df['type'] == 'PERDIDA']
     if len(df_perdida) > 0:
         fig.add_trace(go.Scattergl(
@@ -201,7 +179,6 @@ def plot_events_optimized(fig, df):
             showlegend=False
         ))
     
-    # PASES
     df_pases = df[df['type'] == 'PASE']
     for outcome, color in [('Successful', '#00FF41'), ('Unsuccessful', '#FF4444')]:
         dfo = df_pases[df_pases['outcomeType'] == outcome]
@@ -220,7 +197,6 @@ def plot_events_optimized(fig, df):
     add_arrows_batch(fig, df_pases[df_pases['outcomeType']=='Successful'], '#00FF41', 100)
     add_arrows_batch(fig, df_pases[df_pases['outcomeType']=='Unsuccessful'], '#FF4444', 50)
     
-    # CARRIES
     df_carries = df[df['type'] == 'CONDUCCION']
     if len(df_carries) > 0:
         fig.add_trace(go.Scattergl(
@@ -233,7 +209,6 @@ def plot_events_optimized(fig, df):
         ))
         add_arrows_batch(fig, df_carries, '#00FFFF', 80)
     
-    # TIROS
     tiros_exitosos = ['GOL', 'PALO']
     tiros_fallidos = ['TIRO DESVIADO', 'REMATE ATAJADO']
     
@@ -261,7 +236,6 @@ def plot_events_optimized(fig, df):
         ))
         add_arrows_batch(fig, df_tiros_fail, '#FF4444', 50)
     
-    # RESTO
     eventos_especiales = ['PERDIDA', 'PASE', 'CONDUCCION'] + tiros_exitosos + tiros_fallidos
     df_otros = df[~df['type'].isin(eventos_especiales)]
     
@@ -285,7 +259,6 @@ def filter_by_zones(df, selected_zones):
     if not selected_zones or 'Todas' in selected_zones:
         return df
     
-    # Mapear nombres nuevos a viejos para filtrar
     zone_reverse_mapping = {
         'Medio_Izq': 'Mid_Izq',
         'Medio_Centro': 'Mid_Centro',
@@ -299,8 +272,6 @@ def filter_by_zones(df, selected_zones):
     return df[df['zone'].isin(mapped_zones)]
 
 def style_dataframe(df):
-    """Aplica formato condicional verde a columnas numéricas"""
-    
     def color_scale(val, min_val, max_val):
         if pd.isna(val) or max_val == min_val:
             return ''
@@ -309,10 +280,11 @@ def style_dataframe(df):
         green = int(50 + 150 * normalized)
         return f'background-color: rgba(0, {green}, 50, 0.4)'
     
-    # Columnas numéricas para formato
     numeric_cols = ['Total', 'Exitosos', 'Dist. Media', '% Éxito']
     if 'xT' in df.columns:
         numeric_cols.append('xT')
+    if 'Minutos' in df.columns:
+        numeric_cols.append('Minutos')
     
     styled = df.style
     
@@ -345,32 +317,52 @@ def main():
         
         st.header("🔍 Filtros")
         
-        filter_mode = st.radio("Filtrar por:", ["Categoría", "Tipo Específico"])
+        # CATEGORÍA DE EVENTOS
+        st.markdown("**Categoría de Eventos**")
+        categorias_disponibles = ['Todas', 'ACCIONES_ARQUERO', 'CONDUCCIONES', 
+                                   'DUELOS_DEFENSIVOS', 'DUELOS_OFENSIVOS', 'PASES', 'TIROS']
+        sel_categorias = st.multiselect("", categorias_disponibles, default=['Todas'], key='cat')
         
-        if filter_mode == "Categoría":
-            categorias = sorted(df['category'].dropna().unique().tolist())
-            sel_cats = st.multiselect("Categorías", ['Todas'] + categorias, default=['Todas'])
-            df_f = df if 'Todas' in sel_cats else df[df['category'].isin(sel_cats)]
+        if 'Todas' in sel_categorias:
+            df_f = df.copy()
         else:
-            tipos = sorted(df['type'].unique().tolist())
-            sel_tipos = st.multiselect("Tipos", ['Todos'] + tipos, default=['Todos'])
-            df_f = df if 'Todos' in sel_tipos else df[df['type'].isin(sel_tipos)]
+            df_f = df[df['category'].isin(sel_categorias)]
         
+        # TIPOS DE EVENTOS
+        st.markdown("**Tipos de Eventos**")
+        tipos = sorted(df_f['type'].unique().tolist())
+        sel_tipos = st.multiselect("", ['Todos'] + tipos, default=['Todos'], key='tipos')
+        if 'Todos' not in sel_tipos:
+            df_f = df_f[df_f['type'].isin(sel_tipos)]
+        
+        # LIGA
+        st.markdown("**Liga**")
+        ligas = sorted(df_f['competition'].unique().tolist())
+        sel_ligas = st.multiselect("", ['Todas'] + ligas, default=['Todas'], key='ligas')
+        if 'Todas' not in sel_ligas:
+            df_f = df_f[df_f['competition'].isin(sel_ligas)]
+        
+        # EQUIPOS
+        st.markdown("**Equipos**")
         equipos = sorted(df_f['teamName'].unique().tolist())
-        sel_equipos = st.multiselect("Equipos", ['Todos'] + equipos, default=['Todos'])
+        sel_equipos = st.multiselect("", ['Todos'] + equipos, default=['Todos'], key='equipos')
         if 'Todos' not in sel_equipos:
             df_f = df_f[df_f['teamName'].isin(sel_equipos)]
         
+        # JUGADORES
+        st.markdown("**Jugadores**")
         jugadores = sorted(df_f['playerName'].dropna().unique().tolist())
-        sel_jugadores = st.multiselect("Jugadores", ['Todos'] + jugadores, default=['Todos'])
+        sel_jugadores = st.multiselect("", ['Todos'] + jugadores, default=['Todos'], key='jugadores')
         if 'Todos' not in sel_jugadores:
             df_f = df_f[df_f['playerName'].isin(sel_jugadores)]
         
+        # PARTIDOS
+        st.markdown("**Partidos**")
         if 'match_id' in df_f.columns:
             match_map = get_match_mapping(df_f)
             mids = sorted(df_f['match_id'].unique().tolist())
             mopts = [match_map.get(m, m) for m in mids]
-            sel_matches = st.multiselect("Partidos", ['Todos'] + mopts, default=['Todos'])
+            sel_matches = st.multiselect("", ['Todos'] + mopts, default=['Todos'], key='partidos')
             if 'Todos' not in sel_matches:
                 sel_mids = [m for m, n in match_map.items() if n in sel_matches]
                 df_f = df_f[df_f['match_id'].isin(sel_mids)]
@@ -442,22 +434,39 @@ def main():
     if 'xT' in df_f.columns:
         agg_dict['xT'] = 'sum'
     
+    if 'total_minutes' in df_f.columns:
+        agg_dict['total_minutes'] = 'first'
+    
     resumen = df_f.groupby(['playerName', 'teamName', 'type']).agg(agg_dict).reset_index()
     
     cols = ['Jugador', 'Equipo', 'Tipo', 'Total', 'Exitosos', 'Dist. Media']
+    
+    if 'total_minutes' in df_f.columns:
+        cols.append('Minutos')
+    
     if 'xT' in df_f.columns:
         cols.append('xT')
-        resumen.columns = cols
+    
+    resumen.columns = cols
+    
+    if 'xT' in resumen.columns:
         resumen['xT'] = resumen['xT'].round(3)
-    else:
-        resumen.columns = cols
     
     resumen['% Éxito'] = (resumen['Exitosos'] / resumen['Total'] * 100).round(1)
     resumen['Dist. Media'] = resumen['Dist. Media'].round(1)
+    
+    if 'Minutos' in resumen.columns:
+        resumen['Total/90'] = (resumen['Total'] / resumen['Minutos'] * 90).round(2)
+        resumen['Exitosos/90'] = (resumen['Exitosos'] / resumen['Minutos'] * 90).round(2)
+        if 'xT' in resumen.columns:
+            resumen['xT/90'] = (resumen['xT'] / resumen['Minutos'] * 90).round(3)
+    
     resumen = resumen.sort_values('Total', ascending=False)
     
-    # Aplicar formato condicional
     st.dataframe(style_dataframe(resumen), use_container_width=True, height=400)
+    
+    csv = df_f.to_csv(index=False).encode('utf-8')
+    st.download_button("⬇️ Descargar CSV", csv, "eventos.csv", "text/csv")
 
 if __name__ == "__main__":
     main()
