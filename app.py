@@ -7,7 +7,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import numpy as np
 
-st.set_page_config(page_title="Análisis de Eventos", page_icon="⚽", layout="wide")
+st.set_page_config(page_title="Análisis Eventos", page_icon="⚽", layout="wide")
 
 st.markdown("""
 <style>
