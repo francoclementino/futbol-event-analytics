@@ -1,5 +1,5 @@
 """
-app.py - Sistema completo con filtros mejorados y métricas avanzadas
+app.py - Sistema completo CORREGIDO
 """
 
 import streamlit as st
@@ -52,6 +52,7 @@ def create_pitch():
     for x in [0, L]:
         d = 1 if x == 0 else -1
         shapes.extend([
+            dict(type="rect", x0=x, y0=W/2-20.16, x1=x+d*16.5, y1=W/2+20.16, line=dict(color=lc, width=2), fillcolor="rgba(0,0,0,0)"),
             dict(type="rect", x0=x, y0=W/2-9.16, x1=x+d*5.5, y1=W/2+9.16, line=dict(color=lc, width=2), fillcolor="rgba(0,0,0,0)"),
             dict(type="line", x0=x, y0=W/2-3.66, x1=x, y1=W/2+3.66, line=dict(color=lc, width=3))
         ])
@@ -88,6 +89,9 @@ def plot_heatmap_zones(fig, df):
         'Mid_Izq': 'Medio_Izq',
         'Mid_Centro': 'Medio_Centro',
         'Mid_Der': 'Medio_Der',
+        'Medio_Izq': 'Medio_Izq',
+        'Medio_Centro': 'Medio_Centro',
+        'Medio_Der': 'Medio_Der',
         'Att_Izq': 'Att_Izq',
         'Att_Centro': 'Att_Centro',
         'Att_Der': 'Att_Der'
@@ -260,14 +264,17 @@ def filter_by_zones(df, selected_zones):
         return df
     
     zone_reverse_mapping = {
-        'Medio_Izq': 'Mid_Izq',
-        'Medio_Centro': 'Mid_Centro',
-        'Medio_Der': 'Mid_Der'
+        'Medio_Izq': ['Mid_Izq', 'Medio_Izq'],
+        'Medio_Centro': ['Mid_Centro', 'Medio_Centro'],
+        'Medio_Der': ['Mid_Der', 'Medio_Der']
     }
     
     mapped_zones = []
     for z in selected_zones:
-        mapped_zones.append(zone_reverse_mapping.get(z, z))
+        if z in zone_reverse_mapping:
+            mapped_zones.extend(zone_reverse_mapping[z])
+        else:
+            mapped_zones.append(z)
     
     return df[df['zone'].isin(mapped_zones)]
 
@@ -285,6 +292,10 @@ def style_dataframe(df):
         numeric_cols.append('xT')
     if 'Minutos' in df.columns:
         numeric_cols.append('Minutos')
+    if 'Total/90' in df.columns:
+        numeric_cols.extend(['Total/90', 'Exitosos/90'])
+    if 'xT/90' in df.columns:
+        numeric_cols.append('xT/90')
     
     styled = df.style
     
@@ -317,7 +328,6 @@ def main():
         
         st.header("🔍 Filtros")
         
-        # CATEGORÍA DE EVENTOS
         st.markdown("**Categoría de Eventos**")
         categorias_disponibles = ['Todas', 'ACCIONES_ARQUERO', 'CONDUCCIONES', 
                                    'DUELOS_DEFENSIVOS', 'DUELOS_OFENSIVOS', 'PASES', 'TIROS']
@@ -328,35 +338,30 @@ def main():
         else:
             df_f = df[df['category'].isin(sel_categorias)]
         
-        # TIPOS DE EVENTOS
         st.markdown("**Tipos de Eventos**")
         tipos = sorted(df_f['type'].unique().tolist())
         sel_tipos = st.multiselect("", ['Todos'] + tipos, default=['Todos'], key='tipos')
         if 'Todos' not in sel_tipos:
             df_f = df_f[df_f['type'].isin(sel_tipos)]
         
-        # LIGA
         st.markdown("**Liga**")
         ligas = sorted(df_f['competition'].unique().tolist())
         sel_ligas = st.multiselect("", ['Todas'] + ligas, default=['Todas'], key='ligas')
         if 'Todas' not in sel_ligas:
             df_f = df_f[df_f['competition'].isin(sel_ligas)]
         
-        # EQUIPOS
         st.markdown("**Equipos**")
         equipos = sorted(df_f['teamName'].unique().tolist())
         sel_equipos = st.multiselect("", ['Todos'] + equipos, default=['Todos'], key='equipos')
         if 'Todos' not in sel_equipos:
             df_f = df_f[df_f['teamName'].isin(sel_equipos)]
         
-        # JUGADORES
         st.markdown("**Jugadores**")
         jugadores = sorted(df_f['playerName'].dropna().unique().tolist())
         sel_jugadores = st.multiselect("", ['Todos'] + jugadores, default=['Todos'], key='jugadores')
         if 'Todos' not in sel_jugadores:
             df_f = df_f[df_f['playerName'].isin(sel_jugadores)]
         
-        # PARTIDOS
         st.markdown("**Partidos**")
         if 'match_id' in df_f.columns:
             match_map = get_match_mapping(df_f)
@@ -423,48 +428,42 @@ def main():
     st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
     
     st.markdown("---")
-    st.subheader("📊 Resumen")
+    st.subheader("📊 Resumen por Jugador")
     
-    agg_dict = {
+    # ============ CÁLCULO CORREGIDO DE LA TABLA ============
+    
+    # Agrupar por jugador + tipo de evento
+    resumen = df_f.groupby(['playerName', 'teamName', 'type']).agg({
         'event_id': 'count',
         'outcomeType': lambda x: (x == 'Successful').sum(),
-        'distance': 'mean'
-    }
+        'distance': 'mean',
+        'xT': 'sum' if 'xT' in df_f.columns else lambda x: 0,
+        'total_minutes': 'first' if 'total_minutes' in df_f.columns else lambda x: 90
+    }).reset_index()
     
-    if 'xT' in df_f.columns:
-        agg_dict['xT'] = 'sum'
+    # Renombrar columnas
+    resumen.columns = ['Jugador', 'Equipo', 'Tipo', 'Total', 'Exitosos', 'Dist. Media', 'xT', 'Minutos']
     
-    if 'total_minutes' in df_f.columns:
-        agg_dict['total_minutes'] = 'first'
-    
-    resumen = df_f.groupby(['playerName', 'teamName', 'type']).agg(agg_dict).reset_index()
-    
-    cols = ['Jugador', 'Equipo', 'Tipo', 'Total', 'Exitosos', 'Dist. Media']
-    
-    if 'total_minutes' in df_f.columns:
-        cols.append('Minutos')
-    
-    if 'xT' in df_f.columns:
-        cols.append('xT')
-    
-    resumen.columns = cols
-    
-    if 'xT' in resumen.columns:
-        resumen['xT'] = resumen['xT'].round(3)
-    
+    # Calcular % Éxito
     resumen['% Éxito'] = (resumen['Exitosos'] / resumen['Total'] * 100).round(1)
+    
+    # Redondear
     resumen['Dist. Media'] = resumen['Dist. Media'].round(1)
+    resumen['xT'] = resumen['xT'].round(3)
+    resumen['Minutos'] = resumen['Minutos'].round(0).astype(int)
     
-    if 'Minutos' in resumen.columns:
-        resumen['Total/90'] = (resumen['Total'] / resumen['Minutos'] * 90).round(2)
-        resumen['Exitosos/90'] = (resumen['Exitosos'] / resumen['Minutos'] * 90).round(2)
-        if 'xT' in resumen.columns:
-            resumen['xT/90'] = (resumen['xT'] / resumen['Minutos'] * 90).round(3)
+    # Calcular métricas per 90 CORRECTAMENTE
+    resumen['Total/90'] = ((resumen['Total'] / resumen['Minutos']) * 90).round(2)
+    resumen['Exitosos/90'] = ((resumen['Exitosos'] / resumen['Minutos']) * 90).round(2)
+    resumen['xT/90'] = ((resumen['xT'] / resumen['Minutos']) * 90).round(3)
     
+    # Ordenar por Total descendente
     resumen = resumen.sort_values('Total', ascending=False)
     
+    # Mostrar tabla con formato condicional
     st.dataframe(style_dataframe(resumen), use_container_width=True, height=400)
     
+    # Botón de descarga
     csv = df_f.to_csv(index=False).encode('utf-8')
     st.download_button("⬇️ Descargar CSV", csv, "eventos.csv", "text/csv")
 
