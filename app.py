@@ -412,7 +412,7 @@ def main():
     st.title("⚽ WyScout Analytics Dashboard")
     st.markdown("---")
     
-    # Sidebar
+    # Sidebar - SIN CARGAR DATOS AQUÍ
     with st.sidebar:
         st.markdown("### 📊 Dashboard de Análisis")
         st.markdown("""
@@ -423,17 +423,18 @@ def main():
         """)
         st.markdown("---")
         
+        # COMENTADO - NO CARGAR DATOS EN EL SIDEBAR
         # Información del dataset
-        try:
-            df_info = pd.read_parquet("data/processed/opta_events.parquet", columns=['match_id', 'player_name'])
-            st.info(f"""
-            **📊 Dataset:**
-            - Partidos: {df_info['match_id'].nunique():,}
-            - Jugadores: {df_info['player_name'].nunique():,}
-            - Eventos: {len(df_info):,}
-            """)
-        except:
-            pass
+        # try:
+        #     df_info = pd.read_parquet("data/processed/opta_events.parquet", columns=['match_id', 'player_name'])
+        #     st.info(f"""
+        #     **📊 Dataset:**
+        #     - Partidos: {df_info['match_id'].nunique():,}
+        #     - Jugadores: {df_info['player_name'].nunique():,}
+        #     - Eventos: {len(df_info):,}
+        #     """)
+        # except:
+        #     pass
         
         st.markdown("---")
         st.caption("💡 **Tip:** Los datos se cargan de forma optimizada para mejor rendimiento")
