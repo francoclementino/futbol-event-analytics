@@ -17,7 +17,7 @@ warnings.filterwarnings('ignore')
 # CONFIGURACIÓN Y CACHÉ OPTIMIZADO
 # ============================================================================
 
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(ttl=3600, show_spinner=True, max_entries=2)  # Reducir a 2 entradas máximo
 def cargar_eventos_optimizado(ruta: str, columnas_necesarias: List[str] = None):
     """
     Carga eventos de forma optimizada para grandes datasets
@@ -66,7 +66,7 @@ def obtener_lista_partidos(df: pd.DataFrame) -> Dict[str, str]:
 # ============================================================================
 
 def visualizar_eventos_campo_optimizado(eventos_df: pd.DataFrame, titulo: str, 
-                                        max_eventos: int = 500):
+                                        max_eventos: int = 300):  # Reducido a 300
     """
     Visualiza eventos en el campo con límite para performance
     """
@@ -79,7 +79,7 @@ def visualizar_eventos_campo_optimizado(eventos_df: pd.DataFrame, titulo: str,
         eventos_df = eventos_df.sample(n=max_eventos, random_state=42)
     
     pitch = Pitch(pitch_type='opta', pitch_color='#22312b', line_color='#c7d5cc')
-    fig, ax = pitch.draw(figsize=(12, 8))
+    fig, ax = pitch.draw(figsize=(10, 7))  # Reducido el tamaño
     
     # Filtrar eventos válidos
     eventos_validos = eventos_df[eventos_df['x'].notna() & eventos_df['y'].notna()].copy()
@@ -98,16 +98,16 @@ def visualizar_eventos_campo_optimizado(eventos_df: pd.DataFrame, titulo: str,
     pitch.scatter(
         eventos_validos['x'], 
         eventos_validos['y'],
-        s=100,
+        s=80,  # Reducido el tamaño de los puntos
         c=colors,
         edgecolors='white',
-        linewidth=1,
+        linewidth=0.5,
         alpha=0.7,
         ax=ax,
         zorder=2
     )
     
-    plt.title(titulo, color='white', fontsize=14, pad=20)
+    plt.title(titulo, color='white', fontsize=12, pad=15)
     
     # Leyenda
     from matplotlib.patches import Patch
@@ -116,7 +116,7 @@ def visualizar_eventos_campo_optimizado(eventos_df: pd.DataFrame, titulo: str,
         Patch(facecolor='#ff4444', label='Fallo'),
     ]
     ax.legend(handles=legend_elements, loc='upper right', facecolor='#22312b', 
-             edgecolor='white', labelcolor='white')
+             edgecolor='white', labelcolor='white', fontsize=9)
     
     plt.tight_layout()
     return fig
@@ -130,9 +130,24 @@ def pagina_metricas_jugadores():
     st.title("📈 Métricas de Jugadores")
     st.markdown("---")
     
-    # Barra de progreso para carga
+    # CRÍTICO: Solo cargar cuando el usuario hace clic
+    if 'datos_jugadores_cargados' not in st.session_state:
+        st.session_state.datos_jugadores_cargados = False
+    
+    if not st.session_state.datos_jugadores_cargados:
+        st.info("👋 Esta sección analiza el rendimiento individual de jugadores")
+        
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            st.write("Haz clic en el botón para cargar los datos y comenzar el análisis")
+        with col2:
+            if st.button("🔄 Cargar Datos", type="primary", use_container_width=True):
+                st.session_state.datos_jugadores_cargados = True
+                st.rerun()
+        return
+    
+    # Ahora sí, cargar datos
     with st.spinner("⏳ Cargando datos..."):
-        # Cargar solo columnas necesarias
         columnas_metricas = [
             'player_id', 'player_name', 'team_name', 'match_id', 
             'type_name', 'outcome', 'x', 'y', 'competition', 'date'
@@ -141,9 +156,20 @@ def pagina_metricas_jugadores():
     
     if df is None:
         st.error("❌ No se pudieron cargar los datos")
+        if st.button("⬅️ Volver"):
+            st.session_state.datos_jugadores_cargados = False
+            st.rerun()
         return
     
     st.success(f"✅ Datos cargados: {len(df):,} eventos de {df['player_name'].nunique():,} jugadores")
+    
+    # Botón para recargar
+    col1, col2 = st.columns([5, 1])
+    with col2:
+        if st.button("🔄 Reiniciar", use_container_width=True):
+            st.session_state.datos_jugadores_cargados = False
+            st.cache_data.clear()
+            st.rerun()
     
     # Filtros en sidebar
     st.sidebar.header("🔍 Filtros")
@@ -274,6 +300,22 @@ def pagina_analisis_eventos():
     st.title("🎯 Análisis de Eventos")
     st.markdown("---")
     
+    # CRÍTICO: Solo cargar cuando el usuario hace clic
+    if 'datos_eventos_cargados' not in st.session_state:
+        st.session_state.datos_eventos_cargados = False
+    
+    if not st.session_state.datos_eventos_cargados:
+        st.info("👋 Esta sección permite analizar eventos de partidos completos")
+        
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            st.write("Haz clic en el botón para cargar los datos y comenzar el análisis")
+        with col2:
+            if st.button("🔄 Cargar Datos", type="primary", use_container_width=True, key='btn_eventos'):
+                st.session_state.datos_eventos_cargados = True
+                st.rerun()
+        return
+    
     with st.spinner("⏳ Cargando datos..."):
         columnas_eventos = [
             'match_id', 'competition', 'date', 'period_id',
@@ -283,9 +325,20 @@ def pagina_analisis_eventos():
     
     if df is None:
         st.error("❌ No se pudieron cargar los datos")
+        if st.button("⬅️ Volver"):
+            st.session_state.datos_eventos_cargados = False
+            st.rerun()
         return
     
     st.success(f"✅ Datos cargados: {len(df):,} eventos")
+    
+    # Botón para reiniciar
+    col1, col2 = st.columns([5, 1])
+    with col2:
+        if st.button("🔄 Reiniciar", use_container_width=True, key='reiniciar_eventos'):
+            st.session_state.datos_eventos_cargados = False
+            st.cache_data.clear()
+            st.rerun()
     
     # Selector de partido
     st.subheader("1️⃣ Seleccionar Partido")
@@ -379,7 +432,7 @@ def main():
         page_title="WyScout Analytics",
         page_icon="⚽",
         layout="wide",
-        initial_sidebar_state="expanded"
+        initial_sidebar_state="collapsed"  # CAMBIADO: Cerrado por defecto
     )
     
     # CSS personalizado
@@ -403,41 +456,15 @@ def main():
             background-color: #2e3d50;
         }
         div[data-testid="stMetricValue"] {
-            font-size: 28px;
+            font-size: 24px;
         }
         </style>
     """, unsafe_allow_html=True)
     
     # Título principal
     st.title("⚽ WyScout Analytics Dashboard")
+    st.caption("Análisis avanzado de eventos de fútbol")
     st.markdown("---")
-    
-    # Sidebar - SIN CARGAR DATOS AQUÍ
-    with st.sidebar:
-        st.markdown("### 📊 Dashboard de Análisis")
-        st.markdown("""
-        **Funcionalidades:**
-        - 📈 Métricas de Jugadores
-        - 🎯 Análisis de Eventos
-        - ⚡ Expected Threat (xT)
-        """)
-        st.markdown("---")
-        
-        # COMENTADO - NO CARGAR DATOS EN EL SIDEBAR
-        # Información del dataset
-        # try:
-        #     df_info = pd.read_parquet("data/processed/opta_events.parquet", columns=['match_id', 'player_name'])
-        #     st.info(f"""
-        #     **📊 Dataset:**
-        #     - Partidos: {df_info['match_id'].nunique():,}
-        #     - Jugadores: {df_info['player_name'].nunique():,}
-        #     - Eventos: {len(df_info):,}
-        #     """)
-        # except:
-        #     pass
-        
-        st.markdown("---")
-        st.caption("💡 **Tip:** Los datos se cargan de forma optimizada para mejor rendimiento")
     
     # Pestañas
     tab1, tab2, tab3 = st.tabs([
@@ -447,10 +474,22 @@ def main():
     ])
     
     with tab1:
-        pagina_metricas_jugadores()
+        try:
+            pagina_metricas_jugadores()
+        except Exception as e:
+            st.error(f"❌ Error: {str(e)}")
+            if st.button("🔄 Reintentar"):
+                st.session_state.datos_jugadores_cargados = False
+                st.rerun()
     
     with tab2:
-        pagina_analisis_eventos()
+        try:
+            pagina_analisis_eventos()
+        except Exception as e:
+            st.error(f"❌ Error: {str(e)}")
+            if st.button("🔄 Reintentar", key='retry_eventos'):
+                st.session_state.datos_eventos_cargados = False
+                st.rerun()
     
     with tab3:
         pagina_expected_threat()
