@@ -308,7 +308,7 @@ def style_dataframe(df):
     return styled
 
 def main():
-    st.title("⚽ Análisis de Eventos de Fútbol")
+    st.title("⚽ Análisis de Eventos")
     st.markdown("**Visualización profesional con xT | Datos Opta 120x80**")
     
     with st.sidebar:
