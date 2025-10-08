@@ -51,110 +51,57 @@ def cargar_archivo_subido(archivo_bytes, nombre_archivo: str, columnas_necesaria
 @st.cache_data(ttl=3600, show_spinner=False)
 def obtener_lista_jugadores(df: pd.DataFrame) -> List[str]:
     """Obtiene lista única de jugadores de forma eficiente"""
-    return sorted(df['player_name'].dropna().unique().tolist())
+    if 'playerName' not in df.columns:
+        return []
+    return sorted(df['playerName'].dropna().unique().tolist())
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def obtener_lista_equipos(df: pd.DataFrame) -> List[str]:
     """Obtiene lista única de equipos"""
-    return sorted(df['team_name'].dropna().unique().tolist())
+    if 'teamName' not in df.columns:
+        return []
+    return sorted(df['teamName'].dropna().unique().tolist())
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def obtener_lista_partidos(df: pd.DataFrame) -> Dict[str, str]:
-    """Obtiene lista de partidos con información legible"""
+def obtener_info_partidos(df: pd.DataFrame) -> Dict[str, dict]:
+    """
+    Obtiene información completa de partidos con nombres legibles
+    """
     partidos = {}
+    
     for match_id in df['match_id'].unique():
-        match_data = df[df['match_id'] == match_id].iloc[0]
-        label = f"{match_data.get('competition', 'Unknown')} - {match_data.get('date', 'Unknown')}"
-        partidos[label] = match_id
+        match_data = df[df['match_id'] == match_id]
+        
+        # Obtener equipos del partido
+        equipos = match_data['teamName'].unique()
+        
+        if len(equipos) >= 2:
+            partido_nombre = f"{equipos[0]} vs {equipos[1]}"
+        elif len(equipos) == 1:
+            partido_nombre = f"{equipos[0]}"
+        else:
+            partido_nombre = f"Partido {match_id}"
+        
+        # Agregar fecha si está disponible
+        if 'match_date' in match_data.columns:
+            fecha = match_data['match_date'].iloc[0]
+            if pd.notna(fecha) and fecha != 'Unknown':
+                partido_nombre = f"{fecha} - {partido_nombre}"
+        
+        # Agregar stage si está disponible
+        if 'stage_name' in match_data.columns:
+            stage = match_data['stage_name'].iloc[0]
+            if pd.notna(stage) and stage != 'Unknown':
+                partido_nombre = f"{partido_nombre} ({stage})"
+        
+        partidos[partido_nombre] = {
+            'match_id': match_id,
+            'equipos': list(equipos),
+            'fecha': match_data['match_date'].iloc[0] if 'match_date' in match_data.columns else 'Unknown',
+            'stage': match_data['stage_name'].iloc[0] if 'stage_name' in match_data.columns else 'Unknown'
+        }
+    
     return partidos
-
-# ============================================================================
-# PÁGINA DE CARGA DE ARCHIVOS
-# ============================================================================
-
-def pagina_cargar_archivos():
-    """Página para subir archivos parquet"""
-    st.title("📁 Cargar Archivos de Eventos")
-    st.markdown("---")
-    
-    st.info("""
-    ### 📤 Sube uno o más archivos Parquet con datos de eventos
-    
-    **Formatos aceptados:**
-    - `.parquet` - Archivo de eventos de OPTA procesados
-    
-    **Columnas esperadas:**
-    - `player_name`, `team_name`, `match_id`
-    - `type_name`, `x`, `y`, `outcome`
-    - `competition`, `date`, `period_id`
-    """)
-    
-    # Selector de archivos (permite múltiples)
-    uploaded_files = st.file_uploader(
-        "Selecciona archivo(s) Parquet:",
-        type=['parquet'],
-        accept_multiple_files=True,
-        key='file_uploader',
-        help="Puedes seleccionar uno o varios archivos .parquet"
-    )
-    
-    if uploaded_files:
-        st.success(f"✅ {len(uploaded_files)} archivo(s) seleccionado(s)")
-        
-        # Mostrar información de cada archivo
-        st.markdown("### 📊 Archivos cargados:")
-        
-        for i, uploaded_file in enumerate(uploaded_files):
-            with st.expander(f"📄 {uploaded_file.name} ({uploaded_file.size / (1024*1024):.2f} MB)", expanded=(i==0)):
-                col1, col2 = st.columns([3, 1])
-                
-                with col1:
-                    st.write(f"**Nombre:** {uploaded_file.name}")
-                    st.write(f"**Tamaño:** {uploaded_file.size / (1024*1024):.2f} MB")
-                    st.write(f"**Tipo:** {uploaded_file.type}")
-                
-                with col2:
-                    # Botón para cargar este archivo
-                    if st.button(f"🔍 Analizar", key=f"load_btn_{i}", use_container_width=True):
-                        # Guardar el archivo en session_state
-                        st.session_state['archivo_actual'] = uploaded_file
-                        st.session_state['archivo_actual_nombre'] = uploaded_file.name
-                        st.session_state['archivo_actual_bytes'] = uploaded_file.read()
-                        
-                        # Resetear el puntero del archivo
-                        uploaded_file.seek(0)
-                        
-                        # Vista previa rápida
-                        with st.spinner("Cargando vista previa..."):
-                            try:
-                                df_preview = pd.read_parquet(uploaded_file)
-                                
-                                st.markdown("#### Vista previa:")
-                                col_a, col_b, col_c = st.columns(3)
-                                with col_a:
-                                    st.metric("📊 Eventos", f"{len(df_preview):,}")
-                                with col_b:
-                                    if 'player_name' in df_preview.columns:
-                                        st.metric("👤 Jugadores", f"{df_preview['player_name'].nunique():,}")
-                                with col_c:
-                                    if 'match_id' in df_preview.columns:
-                                        st.metric("🎮 Partidos", f"{df_preview['match_id'].nunique():,}")
-                                
-                                st.dataframe(df_preview.head(10), use_container_width=True)
-                                
-                                # Botón para ir al análisis
-                                if st.button("▶️ Ir al Análisis", type="primary", key=f"analyze_btn_{i}", use_container_width=True):
-                                    st.session_state['archivo_cargado'] = True
-                                    st.rerun()
-                                    
-                            except Exception as e:
-                                st.error(f"Error al cargar archivo: {str(e)}")
-        
-        st.markdown("---")
-        st.caption("💡 **Tip:** Selecciona un archivo y haz clic en 'Analizar' para ver una vista previa")
-    
-    else:
-        st.warning("⚠️ No hay archivos seleccionados. Usa el botón de arriba para subir archivos.")
 
 # ============================================================================
 # FUNCIONES DE VISUALIZACIÓN
@@ -167,7 +114,9 @@ def visualizar_eventos_campo_optimizado(eventos_df: pd.DataFrame, titulo: str,
     """
     if not MPLSOCCER_AVAILABLE:
         st.warning("⚠️ La visualización de campo requiere mplsoccer. Mostrando datos en tabla:")
-        st.dataframe(eventos_df[['type_name', 'x', 'y', 'outcome']].head(50))
+        cols_mostrar = ['type', 'x', 'y', 'outcome']
+        cols_disponibles = [col for col in cols_mostrar if col in eventos_df.columns]
+        st.dataframe(eventos_df[cols_disponibles].head(50))
         return None
     
     from mplsoccer import Pitch
@@ -222,6 +171,126 @@ def visualizar_eventos_campo_optimizado(eventos_df: pd.DataFrame, titulo: str,
     return fig
 
 # ============================================================================
+# PÁGINA DE CARGA DE ARCHIVOS
+# ============================================================================
+
+def pagina_cargar_archivos():
+    """Página para subir archivos parquet"""
+    st.title("📁 Cargar Archivos de Eventos")
+    st.markdown("---")
+    
+    st.info("""
+    ### 📤 Sube uno o más archivos Parquet con datos de eventos
+    
+    **Formatos aceptados:**
+    - `.parquet` - Archivo de eventos de OPTA procesados
+    
+    **Columnas esperadas:**
+    - `playerName`, `teamName`, `match_id`
+    - `type` o `type_name`, `x`, `y`, `outcome`
+    - `competition`, `match_date`
+    """)
+    
+    # Selector de archivos (permite múltiples)
+    uploaded_files = st.file_uploader(
+        "Selecciona archivo(s) Parquet:",
+        type=['parquet'],
+        accept_multiple_files=True,
+        key='file_uploader',
+        help="Puedes seleccionar uno o varios archivos .parquet"
+    )
+    
+    if uploaded_files:
+        st.success(f"✅ {len(uploaded_files)} archivo(s) seleccionado(s)")
+        
+        # Mostrar información de cada archivo
+        st.markdown("### 📊 Archivos cargados:")
+        
+        for i, uploaded_file in enumerate(uploaded_files):
+            with st.expander(f"📄 {uploaded_file.name} ({uploaded_file.size / (1024*1024):.2f} MB)", expanded=(i==0)):
+                col1, col2 = st.columns([3, 1])
+                
+                with col1:
+                    st.write(f"**Nombre:** {uploaded_file.name}")
+                    st.write(f"**Tamaño:** {uploaded_file.size / (1024*1024):.2f} MB")
+                    st.write(f"**Tipo:** {uploaded_file.type}")
+                
+                with col2:
+                    # Botón para cargar este archivo
+                    if st.button(f"🔍 Analizar", key=f"preview_btn_{i}", use_container_width=True):
+                        # Guardar el archivo en session_state
+                        file_bytes = uploaded_file.read()
+                        uploaded_file.seek(0)  # Resetear el puntero
+                        
+                        st.session_state['archivo_actual'] = uploaded_file
+                        st.session_state['archivo_actual_nombre'] = uploaded_file.name
+                        st.session_state['archivo_actual_bytes'] = file_bytes
+                        
+                        # Vista previa rápida
+                        with st.spinner("Cargando vista previa..."):
+                            try:
+                                df_preview = pd.read_parquet(io.BytesIO(file_bytes))
+                                
+                                st.markdown("#### Vista previa:")
+                                col_a, col_b, col_c = st.columns(3)
+                                
+                                with col_a:
+                                    st.metric("📊 Eventos", f"{len(df_preview):,}")
+                                
+                                with col_b:
+                                    if 'playerName' in df_preview.columns:
+                                        st.metric("👤 Jugadores", f"{df_preview['playerName'].nunique():,}")
+                                    elif 'player_name' in df_preview.columns:
+                                        st.metric("👤 Jugadores", f"{df_preview['player_name'].nunique():,}")
+                                
+                                with col_c:
+                                    if 'match_id' in df_preview.columns:
+                                        st.metric("🎮 Partidos", f"{df_preview['match_id'].nunique():,}")
+                                
+                                # Mostrar información de partidos
+                                if 'match_id' in df_preview.columns:
+                                    st.markdown("#### 📋 Partidos en este archivo:")
+                                    
+                                    partidos_info = obtener_info_partidos(df_preview)
+                                    
+                                    # Crear DataFrame para mostrar
+                                    partidos_display = []
+                                    for nombre_partido, info in list(partidos_info.items())[:10]:  # Mostrar primeros 10
+                                        partidos_display.append({
+                                            'Partido': nombre_partido,
+                                            'Fecha': info['fecha'],
+                                            'Stage': info['stage']
+                                        })
+                                    
+                                    if partidos_display:
+                                        df_partidos = pd.DataFrame(partidos_display)
+                                        st.dataframe(df_partidos, use_container_width=True, hide_index=True)
+                                        
+                                        if len(partidos_info) > 10:
+                                            st.caption(f"... y {len(partidos_info) - 10} partidos más")
+                                
+                                # Mostrar primeras filas
+                                st.markdown("#### 🔍 Primeras filas:")
+                                st.dataframe(df_preview.head(10), use_container_width=True)
+                                
+                                # Botón para ir al análisis
+                                st.markdown("---")
+                                if st.button("▶️ Ir al Análisis", type="primary", key=f"analyze_btn_{i}", use_container_width=True):
+                                    st.session_state['archivo_cargado'] = True
+                                    st.rerun()
+                                    
+                            except Exception as e:
+                                st.error(f"Error al cargar archivo: {str(e)}")
+                                import traceback
+                                st.code(traceback.format_exc())
+        
+        st.markdown("---")
+        st.caption("💡 **Tip:** Selecciona un archivo y haz clic en 'Analizar' para ver una vista previa")
+    
+    else:
+        st.warning("⚠️ No hay archivos seleccionados. Usa el botón de arriba para subir archivos.")
+
+# ============================================================================
 # PÁGINAS DE ANÁLISIS
 # ============================================================================
 
@@ -238,14 +307,20 @@ def pagina_metricas_jugadores(df):
             st.rerun()
     
     st.success(f"✅ Analizando: {st.session_state.get('archivo_actual_nombre', 'archivo')}")
-    st.info(f"📊 {len(df):,} eventos | 👤 {df['player_name'].nunique():,} jugadores")
+    
+    # Normalizar nombres de columnas
+    col_player = 'playerName' if 'playerName' in df.columns else 'player_name'
+    col_team = 'teamName' if 'teamName' in df.columns else 'team_name'
+    col_type = 'type' if 'type' in df.columns else 'type_name'
+    
+    st.info(f"📊 {len(df):,} eventos | 👤 {df[col_player].nunique():,} jugadores")
     
     # Filtros en sidebar
     st.sidebar.header("🔍 Filtros")
     
     # Filtro de competición
     if 'competition' in df.columns:
-        competiciones = ['Todas'] + sorted(df['competition'].unique().tolist())
+        competiciones = ['Todas'] + sorted(df['competition'].dropna().unique().tolist())
         competicion_sel = st.sidebar.selectbox(
             "Competición:",
             options=competiciones,
@@ -257,23 +332,18 @@ def pagina_metricas_jugadores(df):
             df = df[df['competition'] == competicion_sel].copy()
     
     # Filtro de equipo
-    if 'team_name' in df.columns:
-        equipos = ['Todos'] + obtener_lista_equipos(df)
-        equipo_sel = st.sidebar.selectbox(
-            "Equipo:",
-            options=equipos,
-            index=0,
-            key='equipo_metricas'
-        )
-        
-        if equipo_sel != 'Todos':
-            df = df[df['team_name'] == equipo_sel].copy()
+    equipos = ['Todos'] + obtener_lista_equipos(df)
+    equipo_sel = st.sidebar.selectbox(
+        "Equipo:",
+        options=equipos,
+        index=0,
+        key='equipo_metricas'
+    )
+    
+    if equipo_sel != 'Todos':
+        df = df[df[col_team] == equipo_sel].copy()
     
     # Selector de jugador
-    if 'player_name' not in df.columns:
-        st.error("❌ El archivo no contiene la columna 'player_name'")
-        return
-    
     jugadores = obtener_lista_jugadores(df)
     
     if not jugadores:
@@ -288,7 +358,7 @@ def pagina_metricas_jugadores(df):
     )
     
     # Filtrar eventos del jugador
-    df_jugador = df[df['player_name'] == jugador_sel].copy()
+    df_jugador = df[df[col_player] == jugador_sel].copy()
     
     if len(df_jugador) == 0:
         st.warning(f"⚠️ No hay eventos para {jugador_sel}")
@@ -328,62 +398,64 @@ def pagina_metricas_jugadores(df):
             st.metric("Eventos/Partido", "N/A")
     
     # Distribución de eventos
-    if 'type_name' in df_jugador.columns:
+    st.markdown("---")
+    st.subheader("📊 Distribución de Eventos")
+    
+    event_counts = df_jugador[col_type].value_counts()
+    
+    fig = go.Figure(data=[
+        go.Bar(
+            x=event_counts.values,
+            y=event_counts.index,
+            orientation='h',
+            marker_color='steelblue'
+        )
+    ])
+    
+    fig.update_layout(
+        title="Tipos de Eventos",
+        xaxis_title="Cantidad",
+        yaxis_title="Tipo de Evento",
+        height=400,
+        template='plotly_dark'
+    )
+    
+    st.plotly_chart(fig, use_container_width=True)
+    
+    # Mapa de eventos
+    if 'x' in df_jugador.columns and 'y' in df_jugador.columns:
         st.markdown("---")
-        st.subheader("📊 Distribución de Eventos")
+        st.subheader("🗺️ Mapa de Eventos")
         
-        event_counts = df_jugador['type_name'].value_counts()
-        
-        fig = go.Figure(data=[
-            go.Bar(
-                x=event_counts.values,
-                y=event_counts.index,
-                orientation='h',
-                marker_color='steelblue'
-            )
-        ])
-        
-        fig.update_layout(
-            title="Tipos de Eventos",
-            xaxis_title="Cantidad",
-            yaxis_title="Tipo de Evento",
-            height=400,
-            template='plotly_dark'
+        tipo_evento_filtro = st.selectbox(
+            "Filtrar por tipo de evento:",
+            options=['Todos'] + sorted(df_jugador[col_type].unique().tolist()),
+            index=0,
+            key='tipo_evento_mapa'
         )
         
-        st.plotly_chart(fig, use_container_width=True)
+        if tipo_evento_filtro != 'Todos':
+            df_visualizar = df_jugador[df_jugador[col_type] == tipo_evento_filtro].copy()
+        else:
+            df_visualizar = df_jugador.copy()
         
-        # Mapa de eventos
-        if 'x' in df_jugador.columns and 'y' in df_jugador.columns:
-            st.markdown("---")
-            st.subheader("🗺️ Mapa de Eventos")
-            
-            tipo_evento_filtro = st.selectbox(
-                "Filtrar por tipo de evento:",
-                options=['Todos'] + sorted(df_jugador['type_name'].unique().tolist()),
-                index=0,
-                key='tipo_evento_mapa'
-            )
-            
-            if tipo_evento_filtro != 'Todos':
-                df_visualizar = df_jugador[df_jugador['type_name'] == tipo_evento_filtro].copy()
+        if len(df_visualizar) > 0:
+            if MPLSOCCER_AVAILABLE:
+                fig_campo = visualizar_eventos_campo_optimizado(
+                    df_visualizar,
+                    f"{jugador_sel} - {tipo_evento_filtro}"
+                )
+                if fig_campo:
+                    st.pyplot(fig_campo)
+                    plt.close()
             else:
-                df_visualizar = df_jugador.copy()
-            
-            if len(df_visualizar) > 0:
-                if MPLSOCCER_AVAILABLE:
-                    fig_campo = visualizar_eventos_campo_optimizado(
-                        df_visualizar,
-                        f"{jugador_sel} - {tipo_evento_filtro}"
-                    )
-                    if fig_campo:
-                        st.pyplot(fig_campo)
-                        plt.close()
-                else:
-                    st.info("📊 Visualización de campo no disponible. Mostrando tabla:")
-                    st.dataframe(df_visualizar[['type_name', 'x', 'y', 'outcome']].head(100))
-            else:
-                st.info("No hay eventos para visualizar con el filtro seleccionado")
+                st.info("📊 Visualización de campo no disponible. Mostrando tabla:")
+                cols_mostrar = [col_type, 'x', 'y']
+                if 'outcome' in df_visualizar.columns:
+                    cols_mostrar.append('outcome')
+                st.dataframe(df_visualizar[cols_mostrar].head(100))
+        else:
+            st.info("No hay eventos para visualizar con el filtro seleccionado")
 
 
 def pagina_analisis_eventos(df):
@@ -406,23 +478,30 @@ def pagina_analisis_eventos(df):
         st.error("❌ El archivo no contiene la columna 'match_id'")
         return
     
+    # Normalizar nombres de columnas
+    col_player = 'playerName' if 'playerName' in df.columns else 'player_name'
+    col_team = 'teamName' if 'teamName' in df.columns else 'team_name'
+    col_type = 'type' if 'type' in df.columns else 'type_name'
+    
     # Selector de partido
     st.subheader("1️⃣ Seleccionar Partido")
     
-    partidos = obtener_lista_partidos(df)
+    partidos_info = obtener_info_partidos(df)
     
-    if not partidos:
+    if not partidos_info:
         st.warning("⚠️ No hay partidos disponibles")
         return
     
+    # Usar nombres legibles en el selector
     partido_sel = st.selectbox(
         "Selecciona un partido:",
-        options=list(partidos.keys()),
+        options=list(partidos_info.keys()),
         index=0,
         key='partido_analisis'
     )
     
-    match_id = partidos[partido_sel]
+    # Obtener el match_id del partido seleccionado
+    match_id = partidos_info[partido_sel]['match_id']
     df_partido = df[df['match_id'] == match_id].copy()
     
     # Información del partido
@@ -433,52 +512,45 @@ def pagina_analisis_eventos(df):
         st.metric("Total Eventos", len(df_partido))
     
     with col2:
-        if 'player_name' in df_partido.columns:
-            st.metric("Jugadores", df_partido['player_name'].nunique())
-        else:
-            st.metric("Jugadores", "N/A")
+        st.metric("Jugadores", df_partido[col_player].nunique())
     
     with col3:
-        if 'team_name' in df_partido.columns:
-            st.metric("Equipos", df_partido['team_name'].nunique())
-        else:
-            st.metric("Equipos", "N/A")
+        st.metric("Equipos", df_partido[col_team].nunique())
     
     # Análisis por equipo
-    if 'team_name' in df_partido.columns and 'type_name' in df_partido.columns:
-        st.markdown("---")
-        st.subheader("📊 Análisis por Equipo")
+    st.markdown("---")
+    st.subheader("📊 Análisis por Equipo")
+    
+    equipos = df_partido[col_team].unique()
+    
+    if len(equipos) >= 2:
+        col1, col2 = st.columns(2)
         
-        equipos = df_partido['team_name'].unique()
-        
-        if len(equipos) >= 2:
-            col1, col2 = st.columns(2)
+        for i, equipo in enumerate(equipos[:2]):
+            df_equipo = df_partido[df_partido[col_team] == equipo]
             
-            for i, equipo in enumerate(equipos[:2]):
-                df_equipo = df_partido[df_partido['team_name'] == equipo]
+            with col1 if i == 0 else col2:
+                st.markdown(f"### {equipo}")
                 
-                with col1 if i == 0 else col2:
-                    st.markdown(f"### {equipo}")
-                    
-                    event_counts = df_equipo['type_name'].value_counts().head(10)
-                    
-                    fig = go.Figure(data=[
-                        go.Bar(
-                            x=event_counts.values,
-                            y=event_counts.index,
-                            orientation='h',
-                            marker_color='coral' if i == 0 else 'steelblue'
-                        )
-                    ])
-                    
-                    fig.update_layout(
-                        title=f"Top 10 Eventos - {equipo}",
-                        xaxis_title="Cantidad",
-                        height=400,
-                        template='plotly_dark'
+                event_counts = df_equipo[col_type].value_counts().head(10)
+                
+                fig = go.Figure(data=[
+                    go.Bar(
+                        x=event_counts.values,
+                        y=event_counts.index,
+                        orientation='h',
+                        marker_color='coral' if i == 0 else 'steelblue'
                     )
-                    
-                    st.plotly_chart(fig, use_container_width=True)
+                ])
+                
+                fig.update_layout(
+                    title=f"Top 10 Eventos - {equipo}",
+                    xaxis_title="Cantidad",
+                    height=400,
+                    template='plotly_dark'
+                )
+                
+                st.plotly_chart(fig, use_container_width=True)
 
 
 def pagina_expected_threat():
@@ -506,7 +578,7 @@ def main():
     
     # Configuración de la página
     st.set_page_config(
-        page_title="Analisis de Eventos",
+        page_title="WyScout Analytics",
         page_icon="⚽",
         layout="wide",
         initial_sidebar_state="collapsed"
@@ -551,7 +623,7 @@ def main():
     if 'archivo_actual_bytes' in st.session_state:
         
         # Título principal
-        st.title("⚽ Analytics Dashboard")
+        st.title("⚽ WyScout Analytics Dashboard")
         st.caption(f"Analizando: {st.session_state.get('archivo_actual_nombre', 'archivo')}")
         st.markdown("---")
         
@@ -581,14 +653,16 @@ def main():
                 pagina_metricas_jugadores(df)
             except Exception as e:
                 st.error(f"❌ Error: {str(e)}")
-                st.code(str(e))
+                import traceback
+                st.code(traceback.format_exc())
         
         with tab2:
             try:
                 pagina_analisis_eventos(df)
             except Exception as e:
                 st.error(f"❌ Error: {str(e)}")
-                st.code(str(e))
+                import traceback
+                st.code(traceback.format_exc())
         
         with tab3:
             pagina_expected_threat()
