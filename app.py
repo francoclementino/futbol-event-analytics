@@ -1,11 +1,12 @@
 """
-app.py - Sistema completo CORREGIDO
+app.py - Sistema completo con Stage, Fechas y Top Progresivos
 """
 
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 import numpy as np
+from datetime import datetime
 
 st.set_page_config(page_title="Análisis de Eventos", page_icon="⚽", layout="wide")
 
@@ -19,12 +20,23 @@ st.markdown("""
     [data-baseweb="popover"], [role="listbox"], [role="option"] { background-color: #31333F !important; }
     [role="option"]:hover { background-color: #4A4C5A !important; }
     [data-testid="stMetricValue"] { color: #FAFAFA !important; }
+    
+    /* Mejorar espaciado de filtros */
+    .stMultiSelect { margin-top: 5px; margin-bottom: 15px; }
+    [data-testid="stSidebar"] h3 { margin-top: 20px; margin-bottom: 5px; }
+    [data-testid="stSidebar"] .element-container { margin-bottom: 10px; }
 </style>
 """, unsafe_allow_html=True)
 
 @st.cache_data
 def load_data(file):
-    return pd.read_parquet(file)
+    df = pd.read_parquet(file)
+    
+    # Convertir match_date a datetime
+    if 'match_date' in df.columns:
+        df['match_date'] = pd.to_datetime(df['match_date'], errors='coerce')
+    
+    return df
 
 def get_match_mapping(df):
     matches = {}
@@ -33,8 +45,14 @@ def get_match_mapping(df):
         teams = mdf['teamName'].unique()
         date = mdf['match_date'].iloc[0] if 'match_date' in mdf.columns else ""
         name = f"{teams[0]} vs {teams[1]}" if len(teams) >= 2 else (teams[0] if len(teams) == 1 else mid)
-        if date and date != "Unknown":
-            name = f"{name} ({date})"
+        
+        if pd.notna(date):
+            try:
+                date_str = date.strftime('%Y-%m-%d')
+                name = f"{date_str} - {name}"
+            except:
+                pass
+        
         matches[mid] = name
     return matches
 
@@ -65,6 +83,90 @@ def create_pitch():
         height=600, margin=dict(l=20, r=20, t=60, b=20),
         showlegend=False, hovermode='closest'
     )
+    return fig
+
+def create_mini_pitch():
+    """Crea una mini cancha para el top de progresivos"""
+    fig = go.Figure()
+    L, W = 120, 80
+    lc = "#FFFFFF"
+    
+    shapes = [
+        dict(type="rect", x0=0, y0=0, x1=L, y1=W, line=dict(color=lc, width=1.5), fillcolor="rgba(0,0,0,0.3)"),
+        dict(type="line", x0=L/2, y0=0, x1=L/2, y1=W, line=dict(color=lc, width=1.5)),
+    ]
+    
+    for x in [0, L]:
+        d = 1 if x == 0 else -1
+        shapes.extend([
+            dict(type="rect", x0=x, y0=W/2-20.16, x1=x+d*16.5, y1=W/2+20.16, line=dict(color=lc, width=1.5), fillcolor="rgba(0,0,0,0)"),
+        ])
+    
+    fig.update_layout(
+        shapes=shapes,
+        plot_bgcolor='#1A5D1A', 
+        paper_bgcolor='rgba(0,0,0,0)',
+        xaxis=dict(range=[-5, L+5], visible=False),
+        yaxis=dict(range=[-5, W+5], visible=False, scaleanchor="x", scaleratio=1),
+        height=250, 
+        margin=dict(l=5, r=5, t=30, b=40),
+        showlegend=False, 
+        hovermode=False
+    )
+    return fig
+
+def plot_progressive_actions(fig, df_player, player_name):
+    """Plotea acciones progresivas en mini cancha"""
+    
+    # Conducciones progresivas (azul)
+    df_carries = df_player[
+        (df_player['type'] == 'CONDUCCION') & 
+        (df_player.get('is_progressive', 0) == 1)
+    ]
+    
+    if len(df_carries) > 0:
+        for _, row in df_carries.iterrows():
+            if pd.notna(row.get('end_x_scaled')) and pd.notna(row.get('end_y_scaled')):
+                fig.add_trace(go.Scatter(
+                    x=[row['x_scaled'], row['end_x_scaled']],
+                    y=[row['y_scaled'], row['end_y_scaled']],
+                    mode='lines',
+                    line=dict(color='#00BFFF', width=2),
+                    opacity=0.6,
+                    hoverinfo='skip',
+                    showlegend=False
+                ))
+    
+    # Pases progresivos (rojo/rosa)
+    df_passes = df_player[
+        (df_player['type'] == 'PASE') & 
+        (df_player.get('is_progressive', 0) == 1) &
+        (df_player['outcomeType'] == 'Successful')
+    ]
+    
+    if len(df_passes) > 0:
+        for _, row in df_passes.iterrows():
+            if pd.notna(row.get('end_x_scaled')) and pd.notna(row.get('end_y_scaled')):
+                fig.add_trace(go.Scatter(
+                    x=[row['x_scaled'], row['end_x_scaled']],
+                    y=[row['y_scaled'], row['end_y_scaled']],
+                    mode='lines',
+                    line=dict(color='#FF1493', width=2),
+                    opacity=0.6,
+                    hoverinfo='skip',
+                    showlegend=False
+                ))
+    
+    # Título con nombre del jugador
+    fig.update_layout(
+        title=dict(
+            text=f"<b>{player_name}</b>",
+            x=0.5,
+            xanchor='center',
+            font=dict(size=14, color='white')
+        )
+    )
+    
     return fig
 
 def get_zone_coordinates():
@@ -307,6 +409,141 @@ def style_dataframe(df):
     
     return styled
 
+def pagina_analisis_principal(df_f, show_heatmap):
+    """Página principal de análisis"""
+    
+    if len(df_f) == 0:
+        st.warning("Sin datos")
+        return
+    
+    st.markdown(f"### 🎯 Mapa - {len(df_f):,} eventos")
+    
+    fig = create_pitch()
+    
+    if show_heatmap:
+        fig = plot_heatmap_zones(fig, df_f)
+    else:
+        fig = plot_events_optimized(fig, df_f)
+    
+    st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+    
+    st.markdown("---")
+    st.subheader("📊 Resumen por Jugador")
+    
+    # Tabla de resumen
+    resumen = df_f.groupby(['playerName', 'teamName', 'type']).agg({
+        'event_id': 'count',
+        'outcomeType': lambda x: (x == 'Successful').sum(),
+        'distance': 'mean',
+        'xT': 'sum' if 'xT' in df_f.columns else lambda x: 0,
+        'total_minutes': 'first' if 'total_minutes' in df_f.columns else lambda x: 90
+    }).reset_index()
+    
+    resumen.columns = ['Jugador', 'Equipo', 'Tipo', 'Total', 'Exitosos', 'Dist. Media', 'xT', 'Minutos']
+    resumen['% Éxito'] = (resumen['Exitosos'] / resumen['Total'] * 100).round(1)
+    resumen['Dist. Media'] = resumen['Dist. Media'].round(1)
+    resumen['xT'] = resumen['xT'].round(3)
+    resumen['Minutos'] = resumen['Minutos'].round(0).astype(int)
+    resumen['Total/90'] = ((resumen['Total'] / resumen['Minutos']) * 90).round(2)
+    resumen['Exitosos/90'] = ((resumen['Exitosos'] / resumen['Minutos']) * 90).round(2)
+    resumen['xT/90'] = ((resumen['xT'] / resumen['Minutos']) * 90).round(3)
+    resumen = resumen.sort_values('Total', ascending=False)
+    
+    st.dataframe(style_dataframe(resumen), use_container_width=True, height=400)
+    
+    csv = df_f.to_csv(index=False).encode('utf-8')
+    st.download_button("⬇️ Descargar CSV", csv, "eventos.csv", "text/csv")
+
+def pagina_top_progresivos(df_f):
+    """Página de Top Jugadores con Acciones Progresivas"""
+    
+    st.markdown("### 🚀 Top Jugadores - Acciones Progresivas")
+    st.markdown("**Conducciones Progresivas** (azul) y **Pases Progresivos** (rosa)")
+    
+    # Filtrar solo acciones progresivas
+    df_prog = df_f[
+        ((df_f['type'] == 'CONDUCCION') | (df_f['type'] == 'PASE')) &
+        (df_f.get('is_progressive', 0) == 1)
+    ].copy()
+    
+    if len(df_prog) == 0:
+        st.warning("⚠️ No hay acciones progresivas con los filtros seleccionados")
+        return
+    
+    # Calcular estadísticas por jugador
+    stats_by_player = df_prog.groupby('playerName').agg({
+        'event_id': 'count',
+        'total_minutes': 'first',
+        'teamName': 'first'
+    }).reset_index()
+    
+    stats_by_player.columns = ['playerName', 'total_prog', 'minutes', 'teamName']
+    
+    # Calcular por tipo
+    carries = df_prog[df_prog['type'] == 'CONDUCCION'].groupby('playerName').size().reset_index(name='prog_carries')
+    passes = df_prog[df_prog['type'] == 'PASE'].groupby('playerName').size().reset_index(name='prog_passes')
+    
+    stats_by_player = stats_by_player.merge(carries, on='playerName', how='left')
+    stats_by_player = stats_by_player.merge(passes, on='playerName', how='left')
+    stats_by_player['prog_carries'] = stats_by_player['prog_carries'].fillna(0).astype(int)
+    stats_by_player['prog_passes'] = stats_by_player['prog_passes'].fillna(0).astype(int)
+    
+    # Calcular por 90
+    stats_by_player['prog_per_90'] = ((stats_by_player['total_prog'] / stats_by_player['minutes']) * 90).round(2)
+    
+    # Ordenar y tomar top 12
+    stats_by_player = stats_by_player.sort_values('prog_per_90', ascending=False).head(12)
+    
+    # Selector de cantidad a mostrar
+    col1, col2 = st.columns([3, 1])
+    with col2:
+        num_players = st.selectbox("Top:", [9, 12], index=1, key='num_players_top')
+    
+    top_players = stats_by_player.head(num_players)
+    
+    # Crear grid 3x3 o 4x3
+    if num_players == 9:
+        cols_per_row = 3
+        num_rows = 3
+    else:
+        cols_per_row = 4
+        num_rows = 3
+    
+    st.markdown("---")
+    
+    for row in range(num_rows):
+        cols = st.columns(cols_per_row)
+        
+        for col_idx in range(cols_per_row):
+            player_idx = row * cols_per_row + col_idx
+            
+            if player_idx >= len(top_players):
+                break
+            
+            player_row = top_players.iloc[player_idx]
+            player_name = player_row['playerName']
+            
+            # Datos del jugador
+            df_player = df_prog[df_prog['playerName'] == player_name]
+            
+            with cols[col_idx]:
+                # Crear mini cancha
+                fig = create_mini_pitch()
+                fig = plot_progressive_actions(fig, df_player, player_name)
+                
+                st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+                
+                # Estadísticas debajo
+                st.markdown(f"""
+                <div style='text-align: center; padding: 5px; background-color: rgba(0,0,0,0.3); border-radius: 5px;'>
+                    <span style='color: #FF1493; font-weight: bold;'>{player_row['prog_passes']:.0f}</span>
+                    <span style='color: white;'> | </span>
+                    <span style='color: #00BFFF; font-weight: bold;'>{player_row['prog_carries']:.0f}</span>
+                    <br>
+                    <span style='color: white; font-size: 12px;'>Prog p90: <b>{player_row['prog_per_90']:.2f}</b></span>
+                </div>
+                """, unsafe_allow_html=True)
+
 def main():
     st.title("⚽ Análisis de Eventos")
     st.markdown("**Visualización profesional con xT | Datos Opta 120x80**")
@@ -326,48 +563,144 @@ def main():
             total_xt = df['xT'].sum()
             st.info(f"✅ xT Total: {total_xt:.2f}")
         
+        st.markdown("---")
         st.header("🔍 Filtros")
         
-        st.markdown("**Categoría de Eventos**")
+        # FILTRO DE STAGE
+        if 'stage_name' in df.columns:
+            st.subheader("📅 Stage / Fase")
+            stages_disponibles = sorted(df['stage_name'].dropna().unique().tolist())
+            
+            if len(stages_disponibles) > 1:
+                sel_stages = st.multiselect(
+                    "Selecciona stage(s):",
+                    options=stages_disponibles,
+                    default=stages_disponibles,
+                    key='stages'
+                )
+                
+                if sel_stages:
+                    df = df[df['stage_name'].isin(sel_stages)]
+                else:
+                    st.warning("Selecciona al menos un stage")
+        
+        # FILTRO DE FECHA
+        if 'match_date' in df.columns:
+            st.subheader("📆 Rango de Fechas")
+            fechas_validas = df['match_date'].dropna()
+            
+            if len(fechas_validas) > 0:
+                fecha_min = fechas_validas.min().date()
+                fecha_max = fechas_validas.max().date()
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    fecha_desde = st.date_input(
+                        "Desde:",
+                        value=fecha_min,
+                        min_value=fecha_min,
+                        max_value=fecha_max,
+                        key='fecha_desde'
+                    )
+                with col2:
+                    fecha_hasta = st.date_input(
+                        "Hasta:",
+                        value=fecha_max,
+                        min_value=fecha_min,
+                        max_value=fecha_max,
+                        key='fecha_hasta'
+                    )
+                
+                # Aplicar filtro de fechas
+                df['match_date_only'] = pd.to_datetime(df['match_date']).dt.date
+                df = df[
+                    (df['match_date_only'] >= fecha_desde) &
+                    (df['match_date_only'] <= fecha_hasta)
+                ]
+                df = df.drop('match_date_only', axis=1)
+                
+                partidos_en_rango = df['match_id'].nunique() if 'match_id' in df.columns else 0
+                st.caption(f"✅ {partidos_en_rango} partidos en rango")
+        
+        st.markdown("---")
+        
+        # Resto de filtros
+        st.subheader("Categoría de Eventos")
         categorias_disponibles = ['Todas', 'ACCIONES_ARQUERO', 'CONDUCCIONES', 
                                    'DUELOS_DEFENSIVOS', 'DUELOS_OFENSIVOS', 'PASES', 'TIROS']
-        sel_categorias = st.multiselect("", categorias_disponibles, default=['Todas'], key='cat')
+        sel_categorias = st.multiselect(
+            "",
+            categorias_disponibles,
+            default=['Todas'],
+            key='cat',
+            label_visibility='collapsed'
+        )
         
         if 'Todas' in sel_categorias:
             df_f = df.copy()
         else:
             df_f = df[df['category'].isin(sel_categorias)]
         
-        st.markdown("**Tipos de Eventos**")
+        st.subheader("Tipos de Eventos")
         tipos = sorted(df_f['type'].unique().tolist())
-        sel_tipos = st.multiselect("", ['Todos'] + tipos, default=['Todos'], key='tipos')
+        sel_tipos = st.multiselect(
+            "",
+            ['Todos'] + tipos,
+            default=['Todos'],
+            key='tipos',
+            label_visibility='collapsed'
+        )
         if 'Todos' not in sel_tipos:
             df_f = df_f[df_f['type'].isin(sel_tipos)]
         
-        st.markdown("**Liga**")
+        st.subheader("Liga")
         ligas = sorted(df_f['competition'].unique().tolist())
-        sel_ligas = st.multiselect("", ['Todas'] + ligas, default=['Todas'], key='ligas')
+        sel_ligas = st.multiselect(
+            "",
+            ['Todas'] + ligas,
+            default=['Todas'],
+            key='ligas',
+            label_visibility='collapsed'
+        )
         if 'Todas' not in sel_ligas:
             df_f = df_f[df_f['competition'].isin(sel_ligas)]
         
-        st.markdown("**Equipos**")
+        st.subheader("Equipos")
         equipos = sorted(df_f['teamName'].unique().tolist())
-        sel_equipos = st.multiselect("", ['Todos'] + equipos, default=['Todos'], key='equipos')
+        sel_equipos = st.multiselect(
+            "",
+            ['Todos'] + equipos,
+            default=['Todos'],
+            key='equipos',
+            label_visibility='collapsed'
+        )
         if 'Todos' not in sel_equipos:
             df_f = df_f[df_f['teamName'].isin(sel_equipos)]
         
-        st.markdown("**Jugadores**")
+        st.subheader("Jugadores")
         jugadores = sorted(df_f['playerName'].dropna().unique().tolist())
-        sel_jugadores = st.multiselect("", ['Todos'] + jugadores, default=['Todos'], key='jugadores')
+        sel_jugadores = st.multiselect(
+            "",
+            ['Todos'] + jugadores,
+            default=['Todos'],
+            key='jugadores',
+            label_visibility='collapsed'
+        )
         if 'Todos' not in sel_jugadores:
             df_f = df_f[df_f['playerName'].isin(sel_jugadores)]
         
-        st.markdown("**Partidos**")
+        st.subheader("Partidos")
         if 'match_id' in df_f.columns:
             match_map = get_match_mapping(df_f)
             mids = sorted(df_f['match_id'].unique().tolist())
             mopts = [match_map.get(m, m) for m in mids]
-            sel_matches = st.multiselect("", ['Todos'] + mopts, default=['Todos'], key='partidos')
+            sel_matches = st.multiselect(
+                "",
+                ['Todos'] + mopts,
+                default=['Todos'],
+                key='partidos',
+                label_visibility='collapsed'
+            )
             if 'Todos' not in sel_matches:
                 sel_mids = [m for m, n in match_map.items() if n in sel_matches]
                 df_f = df_f[df_f['match_id'].isin(sel_mids)]
@@ -379,11 +712,16 @@ def main():
                             'Medio_Izq', 'Medio_Centro', 'Medio_Der',
                             'Att_Izq', 'Att_Centro', 'Att_Der']
         
-        sel_zonas = st.multiselect("Zonas", zonas_disponibles, default=['Todas'])
+        sel_zonas = st.multiselect(
+            "",
+            zonas_disponibles,
+            default=['Todas'],
+            label_visibility='collapsed'
+        )
         df_f = filter_by_zones(df_f, sel_zonas)
         
         st.markdown("---")
-        st.subheader("Filtros Adicionales")
+        st.subheader("⚙️ Opciones")
         
         col1, col2 = st.columns(2)
         with col1:
@@ -391,7 +729,7 @@ def main():
         with col2:
             exito = st.checkbox("Solo Exitosos")
         
-        show_heatmap = st.checkbox("🔥 Mapa de Calor por Zonas")
+        show_heatmap = st.checkbox("🔥 Mapa de Calor")
         
         if prog and 'is_progressive' in df_f.columns:
             df_f = df_f[df_f['is_progressive'] == 1]
@@ -399,7 +737,7 @@ def main():
             df_f = df_f[df_f['outcomeType'] == 'Successful']
         
         st.markdown("---")
-        st.subheader("📊 Stats")
+        st.subheader("📊 Resumen")
         
         col1, col2 = st.columns(2)
         with col1:
@@ -412,60 +750,14 @@ def main():
                 if 'xT' in df_f.columns:
                     st.metric("xT Filtrado", f"{df_f['xT'].sum():.2f}")
     
-    if len(df_f) == 0:
-        st.warning("Sin datos")
-        st.stop()
+    # TABS PRINCIPALES
+    tab1, tab2 = st.tabs(["🗺️ Análisis en Campo", "🚀 Top Progresivos"])
     
-    st.markdown(f"### 🎯 Mapa - {len(df_f):,} eventos")
+    with tab1:
+        pagina_analisis_principal(df_f, show_heatmap)
     
-    fig = create_pitch()
-    
-    if show_heatmap:
-        fig = plot_heatmap_zones(fig, df_f)
-    else:
-        fig = plot_events_optimized(fig, df_f)
-    
-    st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
-    
-    st.markdown("---")
-    st.subheader("📊 Resumen por Jugador")
-    
-    # ============ CÁLCULO CORREGIDO DE LA TABLA ============
-    
-    # Agrupar por jugador + tipo de evento
-    resumen = df_f.groupby(['playerName', 'teamName', 'type']).agg({
-        'event_id': 'count',
-        'outcomeType': lambda x: (x == 'Successful').sum(),
-        'distance': 'mean',
-        'xT': 'sum' if 'xT' in df_f.columns else lambda x: 0,
-        'total_minutes': 'first' if 'total_minutes' in df_f.columns else lambda x: 90
-    }).reset_index()
-    
-    # Renombrar columnas
-    resumen.columns = ['Jugador', 'Equipo', 'Tipo', 'Total', 'Exitosos', 'Dist. Media', 'xT', 'Minutos']
-    
-    # Calcular % Éxito
-    resumen['% Éxito'] = (resumen['Exitosos'] / resumen['Total'] * 100).round(1)
-    
-    # Redondear
-    resumen['Dist. Media'] = resumen['Dist. Media'].round(1)
-    resumen['xT'] = resumen['xT'].round(3)
-    resumen['Minutos'] = resumen['Minutos'].round(0).astype(int)
-    
-    # Calcular métricas per 90 CORRECTAMENTE
-    resumen['Total/90'] = ((resumen['Total'] / resumen['Minutos']) * 90).round(2)
-    resumen['Exitosos/90'] = ((resumen['Exitosos'] / resumen['Minutos']) * 90).round(2)
-    resumen['xT/90'] = ((resumen['xT'] / resumen['Minutos']) * 90).round(3)
-    
-    # Ordenar por Total descendente
-    resumen = resumen.sort_values('Total', ascending=False)
-    
-    # Mostrar tabla con formato condicional
-    st.dataframe(style_dataframe(resumen), use_container_width=True, height=400)
-    
-    # Botón de descarga
-    csv = df_f.to_csv(index=False).encode('utf-8')
-    st.download_button("⬇️ Descargar CSV", csv, "eventos.csv", "text/csv")
+    with tab2:
+        pagina_top_progresivos(df_f)
 
 if __name__ == "__main__":
     main()
