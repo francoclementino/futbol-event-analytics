@@ -118,14 +118,39 @@ def create_mini_pitch():
 def plot_progressive_actions(fig, df_player, player_name):
     """Plotea acciones progresivas en mini cancha"""
     
-    # Conducciones progresivas (azul)
-    df_carries = df_player[
-        (df_player['type'] == 'CONDUCCION') & 
-        (df_player.get('is_progressive', 0) == 1)
-    ]
+    # Filtrar eventos con coordenadas válidas
+    df_valid = df_player[
+        df_player['x_scaled'].notna() & 
+        df_player['y_scaled'].notna()
+    ].copy()
     
+    if len(df_valid) == 0:
+        # Si no hay coordenadas válidas, mostrar mensaje
+        fig.add_annotation(
+            x=60, y=40,
+            text="Sin coordenadas<br>disponibles",
+            showarrow=False,
+            font=dict(size=12, color='white'),
+            bgcolor='rgba(255,0,0,0.3)',
+            borderpad=10
+        )
+        fig.update_layout(
+            title=dict(
+                text=f"<b>{player_name}</b>",
+                x=0.5,
+                xanchor='center',
+                font=dict(size=14, color='white')
+            )
+        )
+        return fig
+    
+    # Conducciones progresivas (azul)
+    df_carries = df_valid[df_valid['type'] == 'CONDUCCION'].copy()
+    
+    carries_plotted = 0
     if len(df_carries) > 0:
         for _, row in df_carries.iterrows():
+            # Intentar graficar con flecha si tiene end coordinates
             if pd.notna(row.get('end_x_scaled')) and pd.notna(row.get('end_y_scaled')):
                 fig.add_trace(go.Scatter(
                     x=[row['x_scaled'], row['end_x_scaled']],
@@ -136,16 +161,30 @@ def plot_progressive_actions(fig, df_player, player_name):
                     hoverinfo='skip',
                     showlegend=False
                 ))
+                carries_plotted += 1
+            else:
+                # Si no tiene end coordinates, solo graficar punto de inicio
+                fig.add_trace(go.Scatter(
+                    x=[row['x_scaled']],
+                    y=[row['y_scaled']],
+                    mode='markers',
+                    marker=dict(color='#00BFFF', size=8, symbol='circle'),
+                    opacity=0.7,
+                    hoverinfo='skip',
+                    showlegend=False
+                ))
+                carries_plotted += 1
     
-    # Pases progresivos (rojo/rosa)
-    df_passes = df_player[
-        (df_player['type'] == 'PASE') & 
-        (df_player.get('is_progressive', 0) == 1) &
-        (df_player['outcomeType'] == 'Successful')
-    ]
+    # Pases progresivos (rosa)
+    df_passes = df_valid[
+        (df_valid['type'] == 'PASE') & 
+        (df_valid['outcomeType'] == 'Successful')
+    ].copy()
     
+    passes_plotted = 0
     if len(df_passes) > 0:
         for _, row in df_passes.iterrows():
+            # Intentar graficar con flecha si tiene end coordinates
             if pd.notna(row.get('end_x_scaled')) and pd.notna(row.get('end_y_scaled')):
                 fig.add_trace(go.Scatter(
                     x=[row['x_scaled'], row['end_x_scaled']],
@@ -156,6 +195,31 @@ def plot_progressive_actions(fig, df_player, player_name):
                     hoverinfo='skip',
                     showlegend=False
                 ))
+                passes_plotted += 1
+            else:
+                # Si no tiene end coordinates, solo graficar punto de inicio
+                fig.add_trace(go.Scatter(
+                    x=[row['x_scaled']],
+                    y=[row['y_scaled']],
+                    mode='markers',
+                    marker=dict(color='#FF1493', size=8, symbol='circle'),
+                    opacity=0.7,
+                    hoverinfo='skip',
+                    showlegend=False
+                ))
+                passes_plotted += 1
+    
+    # Agregar anotación si se graficaron eventos
+    total_plotted = carries_plotted + passes_plotted
+    if total_plotted > 0 and total_plotted < len(df_valid):
+        fig.add_annotation(
+            x=10, y=75,
+            text=f"⚠️ {len(df_valid) - total_plotted} sin coords finales",
+            showarrow=False,
+            font=dict(size=8, color='yellow'),
+            bgcolor='rgba(0,0,0,0.5)',
+            borderpad=3
+        )
     
     # Título con nombre del jugador
     fig.update_layout(
@@ -469,6 +533,23 @@ def pagina_top_progresivos(df_f):
     if len(df_prog) == 0:
         st.warning("⚠️ No hay acciones progresivas con los filtros seleccionados")
         return
+    
+    # Diagnóstico de coordenadas
+    with st.expander("🔍 Diagnóstico de Datos"):
+        total_prog = len(df_prog)
+        con_x_y = df_prog['x_scaled'].notna().sum()
+        con_end_x_y = df_prog['end_x_scaled'].notna().sum()
+        
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Total Progresivas", total_prog)
+        with col2:
+            st.metric("Con coordenadas inicio", f"{con_x_y} ({con_x_y/total_prog*100:.1f}%)")
+        with col3:
+            st.metric("Con coordenadas fin", f"{con_end_x_y} ({con_end_x_y/total_prog*100:.1f}%)")
+        
+        if con_end_x_y < total_prog * 0.5:
+            st.warning("⚠️ Más del 50% de las acciones no tienen coordenadas finales. Las flechas serán limitadas.")
     
     # Calcular estadísticas por jugador
     stats_by_player = df_prog.groupby('playerName').agg({
