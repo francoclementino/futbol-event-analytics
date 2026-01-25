@@ -1,0 +1,302 @@
+{
+  "1": {
+    "name": "Pass",
+    "description": "Any pass attempt"
+  },
+  "2": {
+    "name": "Offside Pass",
+    "description": "An attempted pass where the receiving player is offside"
+  },
+  "3": {
+    "name": "Take On",
+    "description": "An attempt to dribble past an opponent"
+  },
+  "4": {
+    "name": "Foul",
+    "description": "Any foul conceded"
+  },
+  "5": {
+    "name": "Out",
+    "description": "Ball goes out of play"
+  },
+  "6": {
+    "name": "Corner Awarded",
+    "description": "When corner kick is awarded"
+  },
+  "7": {
+    "name": "Tackle",
+    "description": "A tackle attempt"
+  },
+  "8": {
+    "name": "Interception",
+    "description": "Player intercepts the ball"
+  },
+  "9": {
+    "name": "Turnover",
+    "description": "Player loses possession"
+  },
+  "10": {
+    "name": "Save",
+    "description": "Goalkeeper saves the ball"
+  },
+  "11": {
+    "name": "Claim",
+    "description": "Goalkeeper catches/claims the ball"
+  },
+  "12": {
+    "name": "Clearance",
+    "description": "Defensive clearance"
+  },
+  "13": {
+    "name": "Miss",
+    "description": "Shot off target"
+  },
+  "14": {
+    "name": "Post",
+    "description": "Shot hits the post/crossbar"
+  },
+  "15": {
+    "name": "Attempt Saved",
+    "description": "Shot on target saved by goalkeeper"
+  },
+  "16": {
+    "name": "Goal",
+    "description": "Goal scored"
+  },
+  "17": {
+    "name": "Card",
+    "description": "Yellow or red card shown"
+  },
+  "18": {
+    "name": "Player Off",
+    "description": "Player substituted off"
+  },
+  "19": {
+    "name": "Player On",
+    "description": "Player substituted on"
+  },
+  "20": {
+    "name": "Player Retired",
+    "description": "Player injured/retired"
+  },
+  "21": {
+    "name": "Player Returns",
+    "description": "Player returns after injury"
+  },
+  "22": {
+    "name": "Player Becomes Goalkeeper",
+    "description": "Outfield player becomes goalkeeper"
+  },
+  "23": {
+    "name": "Goalkeeper Becomes Player",
+    "description": "Goalkeeper becomes outfield player"
+  },
+  "24": {
+    "name": "Conditions Comfortable",
+    "description": "Weather/pitch conditions good"
+  },
+  "25": {
+    "name": "Conditions Difficult",
+    "description": "Weather/pitch conditions difficult"
+  },
+  "26": {
+    "name": "Official Injury",
+    "description": "Official/referee injured"
+  },
+  "27": {
+    "name": "Ball Recovery",
+    "description": "Team recovers the ball"
+  },
+  "28": {
+    "name": "Dispossessed",
+    "description": "Player is dispossessed"
+  },
+  "29": {
+    "name": "Error",
+    "description": "Defensive error"
+  },
+  "30": {
+    "name": "Keeper Pick-Up",
+    "description": "Goalkeeper picks up the ball"
+  },
+  "31": {
+    "name": "Crossed In",
+    "description": "Cross into the box"
+  },
+  "32": {
+    "name": "Offside Provoked",
+    "description": "Defender forces opponent offside"
+  },
+  "33": {
+    "name": "Shield Ball",
+    "description": "Player shields the ball out"
+  },
+  "34": {
+    "name": "Foul Throw-in",
+    "description": "Illegal throw-in"
+  },
+  "35": {
+    "name": "Penalty Faced",
+    "description": "Goalkeeper faces penalty"
+  },
+  "36": {
+    "name": "Keeper Sweeper",
+    "description": "Goalkeeper acts as sweeper"
+  },
+  "37": {
+    "name": "Chance Missed",
+    "description": "Clear goal-scoring chance missed"
+  },
+  "38": {
+    "name": "Ball Touch",
+    "description": "Player touches the ball"
+  },
+  "39": {
+    "name": "Temp_Goal",
+    "description": "Temporary goal (data validation)"
+  },
+  "40": {
+    "name": "Temp_Attempt",
+    "description": "Temporary attempt (data validation)"
+  },
+  "41": {
+    "name": "Formation Change",
+    "description": "Team formation change"
+  },
+  "42": {
+    "name": "Punch",
+    "description": "Goalkeeper punches the ball"
+  },
+  "43": {
+    "name": "Good Skill",
+    "description": "Skillful play by player"
+  },
+  "44": {
+    "name": "Deleted Event",
+    "description": "Event removed from feed"
+  },
+  "45": {
+    "name": "Aerial",
+    "description": "Aerial duel"
+  },
+  "46": {
+    "name": "Challenge",
+    "description": "50/50 challenge"
+  },
+  "47": {
+    "name": "Rescinded Card",
+    "description": "Card rescinded after review"
+  },
+  "49": {
+    "name": "Ball Recovery",
+    "description": "Ball recovered by player"
+  },
+  "50": {
+    "name": "Dispossessed",
+    "description": "Player dispossessed"
+  },
+  "51": {
+    "name": "Error",
+    "description": "Player error leading to chance/goal"
+  },
+  "52": {
+    "name": "Keeper Pickup",
+    "description": "Goalkeeper picks up ball with hands"
+  },
+  "53": {
+    "name": "Cross Not Claimed",
+    "description": "Goalkeeper fails to claim cross"
+  },
+  "54": {
+    "name": "Smother",
+    "description": "Goalkeeper smothers the ball"
+  },
+  "55": {
+    "name": "Offside Provoked",
+    "description": "Defender steps up to catch opponent offside"
+  },
+  "56": {
+    "name": "Shield Ball Opp",
+    "description": "Shield ball out from opponent"
+  },
+  "57": {
+    "name": "Foul Throw In",
+    "description": "Foul throw-in awarded"
+  },
+  "58": {
+    "name": "Penalty Faced",
+    "description": "Penalty kick faced by goalkeeper"
+  },
+  "59": {
+    "name": "Keeper Sweeper",
+    "description": "Goalkeeper sweeps behind defense"
+  },
+  "60": {
+    "name": "Chance Missed",
+    "description": "Big chance missed"
+  },
+  "61": {
+    "name": "Ball Touch",
+    "description": "Touch of the ball"
+  },
+  "63": {
+    "name": "Temp_Save",
+    "description": "Temporary save (data validation)"
+  },
+  "64": {
+    "name": "Temp_Back_Pass",
+    "description": "Temporary back pass (data validation)"
+  },
+  "65": {
+    "name": "Temp_Formation",
+    "description": "Temporary formation (data validation)"
+  },
+  "66": {
+    "name": "Temp_Punch",
+    "description": "Temporary punch (data validation)"
+  },
+  "67": {
+    "name": "50/50",
+    "description": "50/50 ball challenge"
+  },
+  "68": {
+    "name": "Referee Drop Ball",
+    "description": "Referee drops ball to restart play"
+  },
+  "69": {
+    "name": "Failed to Block",
+    "description": "Failed attempt to block"
+  },
+  "70": {
+    "name": "Injury Clearance",
+    "description": "Ball cleared due to injury"
+  },
+  "71": {
+    "name": "Tackle Overrun",
+    "description": "Player overruns ball during tackle"
+  },
+  "72": {
+    "name": "Temp_Shotsaved",
+    "description": "Temporary shot saved (data validation)"
+  },
+  "73": {
+    "name": "Temp_Offside",
+    "description": "Temporary offside (data validation)"
+  },
+  "74": {
+    "name": "Blocked Pass",
+    "description": "Pass blocked by opponent"
+  },
+  "75": {
+    "name": "Player Stand Tackle",
+    "description": "Standing tackle by player"
+  },
+  "76": {
+    "name": "Player Stand Off",
+    "description": "Player stands off opponent"
+  },
+  "77": {
+    "name": "Hand Ball",
+    "description": "Handball offense"
+  }
+}

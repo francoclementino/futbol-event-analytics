@@ -1,8 +1,25 @@
-streamlit>=1.28.0
+# requirements.txt
+# ===== ANÁLISIS Y PROCESAMIENTO DE DATOS =====
 pandas>=2.0.0
 numpy>=1.24.0
-plotly>=5.14.0
-mplsoccer>=1.3.0
+
+# ===== ARCHIVOS Y FORMATOS =====
+pyarrow>=12.0.0      # Para archivos Parquet
+openpyxl>=3.1.0      # Para archivos Excel
+
+# ===== STREAMLIT Y VISUALIZACIÓN WEB =====
+streamlit>=1.28.0
 matplotlib>=3.7.0
-scipy>=1.11.0
-pyarrow>=12.0.0
+mplsoccer>=1.3.0
+
+# ===== ANÁLISIS DE FÚTBOL (OPCIONAL - Para futuras funcionalidades) =====
+# statsbombpy>=1.5.0     # Para datos StatsBomb
+# soccerdata>=1.3.0      # Para múltiples fuentes de datos
+
+# ===== APRENDIZAJE AUTOMÁTICO (OPCIONAL - Para xG y xT) =====
+# scikit-learn>=1.3.0
+# xgboost>=2.0.0
+# lightgbm>=4.0.0
+
+# ===== UTILIDADES =====
+python-dateutil>=2.8.2
