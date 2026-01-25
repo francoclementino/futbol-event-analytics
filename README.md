@@ -1,5 +1,7 @@
 # ⚽ Football Analytics Dashboard
 
+> **Última actualización:** Enero 2025 - Versión 1.2
+
 Sistema completo de análisis de fútbol con datos OPTA F24, incluyendo procesamiento por lotes y aplicación web interactiva con Streamlit.
 
 ---
