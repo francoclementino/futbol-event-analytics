@@ -26,7 +26,7 @@ def scan_data_directories():
     raw_dir.mkdir(parents=True, exist_ok=True)
     processed_dir.mkdir(parents=True, exist_ok=True)
     
-    # Buscar archivos
+    # Buscar archivos JSON (cualquier formato)
     json_files = sorted(raw_dir.glob('*.json'))
     parquet_files = sorted(processed_dir.glob('*.parquet'))
     
@@ -42,12 +42,26 @@ def scan_data_directories():
         'parquet_files': sorted(parquet_files)
     }
 
-def load_match_data(f24_path):
-    """Carga datos del archivo F24 JSON"""
+def load_match_data(json_path):
+    """Carga datos del archivo JSON y detecta formato automáticamente"""
     try:
-        with open(f24_path, 'r', encoding='utf-8') as f:
+        with open(json_path, 'r', encoding='utf-8') as f:
             data = json.load(f)
-        return data
+        
+        # Detectar formato
+        if 'Event' in data:
+            # Formato F24 clásico de Opta
+            return {'format': 'f24', 'data': data}
+        elif 'matchInfo' in data and 'liveData' in data:
+            # Formato Stats Perform / Opta API (tu formato)
+            return {'format': 'stats_perform', 'data': data}
+        elif 'events' in data:
+            # Formato genérico con eventos
+            return {'format': 'generic', 'data': data}
+        else:
+            st.warning("⚠️ Formato de JSON no reconocido. Intentando parsear...")
+            return {'format': 'unknown', 'data': data}
+            
     except Exception as e:
         st.error(f"Error cargando archivo: {e}")
         return None
@@ -61,8 +75,76 @@ def load_parquet_data(parquet_path):
         st.error(f"Error cargando parquet: {e}")
         return None
 
-def extract_passes(match_data, team_id, period=None):
-    """Extrae todos los pases de un equipo específico"""
+def extract_passes(match_obj, team_id, period=None):
+    """Extrae todos los pases de un equipo específico - soporta múltiples formatos"""
+    
+    if match_obj is None:
+        return []
+    
+    format_type = match_obj.get('format', 'unknown')
+    match_data = match_obj.get('data', {})
+    
+    if format_type == 'stats_perform':
+        return extract_passes_stats_perform(match_data, team_id, period)
+    elif format_type == 'f24':
+        return extract_passes_f24(match_data, team_id, period)
+    else:
+        st.error(f"❌ Formato '{format_type}' no soportado para extracción de pases")
+        return []
+
+def extract_passes_stats_perform(match_data, team_id, period=None):
+    """Extrae pases del formato Stats Perform / Opta API"""
+    passes = []
+    
+    if 'liveData' not in match_data or 'event' not in match_data['liveData']:
+        return passes
+    
+    for event in match_data['liveData']['event']:
+        # Solo pases (typeId = 1)
+        if event.get('typeId') != 1:
+            continue
+        
+        # Filtrar por equipo
+        if str(event.get('contestantId')) != str(team_id):
+            continue
+        
+        # Filtrar por período si se especifica
+        if period and int(event.get('periodId', 0)) != period:
+            continue
+        
+        # Obtener coordenadas (x, y son porcentajes 0-100)
+        x = float(event.get('x', 0))
+        y = float(event.get('y', 0))
+        
+        # Buscar coordenadas finales en qualifiers
+        end_x, end_y = None, None
+        qualifiers = event.get('qualifier', [])
+        
+        for q in qualifiers:
+            if q.get('qualifierId') == 140:  # End X
+                end_x = float(q.get('value', 0))
+            elif q.get('qualifierId') == 141:  # End Y
+                end_y = float(q.get('value', 0))
+        
+        # Resultado del pase (outcomeType: 1 = exitoso)
+        outcome = event.get('outcomeType', 0)
+        is_successful = outcome == 1
+        
+        passes.append({
+            'player_id': event.get('playerId'),
+            'x': x,
+            'y': y,
+            'end_x': end_x,
+            'end_y': end_y,
+            'outcome': is_successful,
+            'timestamp': event.get('timeStamp'),
+            'period': event.get('periodId')
+        })
+    
+    return passes
+
+def extract_passes_f24(match_data, team_id, period=None):
+    """Extrae pases del formato F24 clásico de Opta"""
     passes = []
     
     for event in match_data.get('Event', []):
@@ -103,8 +185,60 @@ def extract_passes(match_data, team_id, period=None):
     
     return passes
 
-def get_player_names(match_data, team_id):
-    """Extrae nombres de jugadores de un equipo"""
+def get_player_names(match_obj, team_id):
+    """Extrae nombres de jugadores de un equipo - soporta múltiples formatos"""
+    
+    if match_obj is None:
+        return {}
+    
+    format_type = match_obj.get('format', 'unknown')
+    match_data = match_obj.get('data', {})
+    
+    if format_type == 'stats_perform':
+        return get_player_names_stats_perform(match_data, team_id)
+    elif format_type == 'f24':
+        return get_player_names_f24(match_data, team_id)
+    else:
+        return {}
+
+def get_player_names_stats_perform(match_data, team_id):
+    """Extrae nombres de jugadores del formato Stats Perform"""
+    players = {}
+    
+    # Primero intentar desde liveData.lineup
+    if 'liveData' in match_data and 'lineup' in match_data['liveData']:
+        for team_lineup in match_data['liveData']['lineup']:
+            if str(team_lineup.get('contestantId')) == str(team_id):
+                for player in team_lineup.get('player', []):
+                    player_id = player.get('playerId')
+                    
+                    # Construir nombre completo
+                    first_name = player.get('matchName', '')
+                    last_name = player.get('surname', '')
+                    
+                    if first_name and last_name:
+                        full_name = f"{first_name} {last_name}"
+                    else:
+                        full_name = first_name or last_name or player.get('shortName', f'Player {player_id}')
+                    
+                    players[player_id] = full_name
+                break
+    
+    # Si no hay lineup, extraer de eventos
+    if not players and 'liveData' in match_data and 'event' in match_data['liveData']:
+        for event in match_data['liveData']['event']:
+            if str(event.get('contestantId')) != str(team_id):
+                continue
+            
+            player_id = event.get('playerId')
+            # En eventos no hay nombre, usar ID
+            if player_id and player_id not in players:
+                players[player_id] = f'Jugador {player_id}'
+    
+    return players
+
+def get_player_names_f24(match_data, team_id):
+    """Extrae nombres de jugadores del formato F24"""
     players = {}
     
     for event in match_data.get('Event', []):
@@ -119,8 +253,38 @@ def get_player_names(match_data, team_id):
     
     return players
 
-def get_team_names(match_data):
-    """Extrae nombres de equipos del match"""
+def get_team_names(match_obj):
+    """Extrae nombres de equipos del match - soporta múltiples formatos"""
+    
+    if match_obj is None:
+        return {}
+    
+    format_type = match_obj.get('format', 'unknown')
+    match_data = match_obj.get('data', {})
+    
+    if format_type == 'stats_perform':
+        return get_team_names_stats_perform(match_data)
+    elif format_type == 'f24':
+        return get_team_names_f24(match_data)
+    else:
+        return {}
+
+def get_team_names_stats_perform(match_data):
+    """Extrae nombres de equipos del formato Stats Perform"""
+    teams = {}
+    
+    if 'matchInfo' in match_data and 'contestant' in match_data['matchInfo']:
+        for team in match_data['matchInfo']['contestant']:
+            team_id = team.get('id')
+            team_name = team.get('name', f'Team {team_id}')
+            
+            if team_id:
+                teams[team_id] = team_name
+    
+    return teams
+
+def get_team_names_f24(match_data):
+    """Extrae nombres de equipos del formato F24"""
     teams = {}
     
     for event in match_data.get('Event', []):
@@ -322,6 +486,16 @@ futbol-event-analytics/
                 match_data = load_match_data(selected_file)
             
             if match_data is not None:
+                # Mostrar formato detectado
+                format_type = match_data.get('format', 'unknown')
+                format_label = {
+                    'f24': '🟢 Formato: Opta F24',
+                    'stats_perform': '🟡 Formato: Stats Perform / Opta API',
+                    'generic': '🟠 Formato: Genérico',
+                    'unknown': '⚠️ Formato: Desconocido'
+                }
+                st.info(format_label.get(format_type, format_type))
+                
                 # Obtener equipos
                 teams = get_team_names(match_data)
                 
