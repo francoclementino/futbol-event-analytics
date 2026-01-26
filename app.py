@@ -1,5 +1,6 @@
 # app.py
-# Versión: 1.2 - Sistema de análisis de fútbol con OPTA F24 (actualizado)
+# Versión: 1.3 - Sistema de análisis de fútbol con OPTA F24 (SIN PLOTLY)
+# ACTUALIZADO: 26 Enero 2025
 import streamlit as st
 import sys
 from pathlib import Path
@@ -123,4 +124,5 @@ def main():
 if __name__ == "__main__":
     main()
 
-# Última actualización: Enero 2025 - Corrección de imports
+# Última actualización: 26 Enero 2025 - Versión 1.3 SIN PLOTLY
+# Este archivo NO requiere plotly - usa solo matplotlib y mplsoccer
