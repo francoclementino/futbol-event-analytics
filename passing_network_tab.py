@@ -194,7 +194,20 @@ def get_player_names_stats_perform(match_data, team_id):
     """Extrae nombres de jugadores del formato Stats Perform"""
     players = {}
     
-    if 'liveData' in match_data and 'lineup' in match_data['liveData']:
+    # Extraer nombres directamente de los eventos (más confiable)
+    if 'liveData' in match_data and 'event' in match_data['liveData']:
+        for event in match_data['liveData']['event']:
+            if str(event.get('contestantId')) != str(team_id):
+                continue
+            
+            player_id = event.get('playerId')
+            player_name = event.get('playerName')
+            
+            if player_id and player_name and player_id not in players:
+                players[player_id] = player_name
+    
+    # Si no se encontraron nombres en eventos, intentar desde lineup
+    if not players and 'liveData' in match_data and 'lineup' in match_data['liveData']:
         for team_lineup in match_data['liveData']['lineup']:
             if str(team_lineup.get('contestantId')) == str(team_id):
                 for player in team_lineup.get('player', []):
@@ -210,15 +223,6 @@ def get_player_names_stats_perform(match_data, team_id):
                     
                     players[player_id] = full_name
                 break
-    
-    if not players and 'liveData' in match_data and 'event' in match_data['liveData']:
-        for event in match_data['liveData']['event']:
-            if str(event.get('contestantId')) != str(team_id):
-                continue
-            
-            player_id = event.get('playerId')
-            if player_id and player_id not in players:
-                players[player_id] = f'Jugador {player_id}'
     
     return players
 
@@ -309,31 +313,49 @@ def calculate_pass_network_positions(passes, player_names):
             'passes': player_pass_counts.get(player_id, 0)
         }
     
+    # Calcular conexiones usando proximidad de coordenadas finales
+    # Un pase exitoso se conecta al jugador más cercano a las coordenadas finales
     for i, pass_event in enumerate(passes):
-        if not pass_event['outcome'] or not pass_event['end_x']:
+        if not pass_event['outcome'] or not pass_event['end_x'] or not pass_event['end_y']:
             continue
         
-        passer = pass_event['player_id']
+        passer_id = pass_event['player_id']
+        end_x = pass_event['end_x']
+        end_y = pass_event['end_y']
         
-        if i + 1 < len(passes):
-            next_event = passes[i + 1]
-            receiver = next_event['player_id']
+        # Buscar el jugador más cercano a las coordenadas finales
+        # entre los eventos subsiguientes (siguientes 5 eventos)
+        min_distance = float('inf')
+        receiver_id = None
+        
+        for j in range(i + 1, min(i + 6, len(passes))):
+            next_event = passes[j]
+            next_player = next_event['player_id']
             
-            if passer != receiver:
-                key = (passer, receiver)
-                connections[key] = connections.get(key, 0) + 1
+            # Calcular distancia euclidiana
+            distance = np.sqrt((next_event['x'] - end_x)**2 + (next_event['y'] - end_y)**2)
+            
+            if distance < min_distance and distance < 15:  # Umbral de 15 unidades
+                min_distance = distance
+                receiver_id = next_player
+        
+        # Agregar conexión si se encontró un receptor válido
+        if receiver_id and receiver_id != passer_id:
+            key = (passer_id, receiver_id)
+            connections[key] = connections.get(key, 0) + 1
     
     return avg_positions, connections
 
 def plot_passing_network(avg_positions, connections, team_name, ax, min_passes=3):
     """Visualiza la red de pases en una cancha"""
     pitch = Pitch(pitch_type='custom', pitch_length=105, pitch_width=68,
-                  line_color='white', pitch_color='#1a5d1a')
+                  line_color='white', pitch_color='#1a5d1a', linewidth=1.5)
     pitch.draw(ax=ax)
     
     scale_x = 105 / 100
     scale_y = 68 / 100
     
+    # Dibujar conexiones primero (para que queden debajo de los nodos)
     for (passer, receiver), count in connections.items():
         if count < min_passes:
             continue
@@ -344,30 +366,42 @@ def plot_passing_network(avg_positions, connections, team_name, ax, min_passes=3
             x2 = avg_positions[receiver]['x'] * scale_x
             y2 = avg_positions[receiver]['y'] * scale_y
             
-            width = max(0.5, count / 5)
-            alpha = min(0.8, count / 10)
+            # Grosor proporcional al número de pases
+            width = max(1, min(count / 2, 8))  # Entre 1 y 8
+            alpha = min(0.9, 0.3 + (count / 20))  # Entre 0.3 y 0.9
             
             ax.plot([x1, x2], [y1, y2], 
-                   color='cyan', linewidth=width, alpha=alpha, zorder=1)
+                   color='#00d9ff', linewidth=width, alpha=alpha, zorder=1,
+                   solid_capstyle='round')
     
+    # Dibujar jugadores encima
     for player_id, pos in avg_positions.items():
         x = pos['x'] * scale_x
         y = pos['y'] * scale_y
         passes = pos['passes']
         
-        size = max(100, passes * 10)
+        # Tamaño proporcional a los pases
+        size = max(200, min(passes * 15, 1000))
         
-        ax.scatter(x, y, s=size, c='gold', edgecolors='white', 
-                  linewidths=2, zorder=2, marker='h')
+        # Hexágonos blancos con borde
+        ax.scatter(x, y, s=size, c='white', edgecolors='#00d9ff', 
+                  linewidths=3, zorder=2, marker='h', alpha=0.95)
         
+        # Nombre del jugador (solo apellido)
         name_parts = pos['name'].split()
-        short_name = name_parts[-1] if name_parts else pos['name']
+        if len(name_parts) > 1:
+            # Si tiene nombre y apellido, mostrar apellido
+            short_name = name_parts[-1]
+        else:
+            # Si es un nombre completo o inicial+apellido, mostrar todo
+            short_name = pos['name']
         
-        ax.text(x, y - 3, short_name, fontsize=8, color='white',
-               ha='center', va='top', weight='bold',
-               bbox=dict(boxstyle='round,pad=0.3', facecolor='black', alpha=0.7))
+        # Texto en el hexágono
+        ax.text(x, y, short_name, fontsize=9, color='#0a2e0a',
+               ha='center', va='center', weight='bold', zorder=3)
     
-    ax.set_title(f'{team_name} - Passing Network', fontsize=14, weight='bold', color='white')
+    ax.set_title(f'{team_name} - Passing Network', 
+                fontsize=16, weight='bold', color='white', pad=15)
     ax.axis('off')
 
 def process_json_file(json_path):
@@ -457,41 +491,81 @@ def process_json_file(json_path):
     
     # Tablas de conexiones principales
     st.markdown("---")
-    st.subheader("📊 Top 5 Conexiones")
+    st.subheader("📊 Top 10 Combinaciones")
     
     col1, col2 = st.columns(2)
     
     with col1:
         st.markdown(f"**{teams[team_ids[0]]}**")
-        top_conn1 = sorted(connections1.items(), key=lambda x: x[1], reverse=True)[:5]
+        top_conn1 = sorted(connections1.items(), key=lambda x: x[1], reverse=True)[:10]
         
         if top_conn1:
             conn_data1 = []
-            for (p1, p2), count in top_conn1:
+            for rank, ((p1, p2), count) in enumerate(top_conn1, 1):
                 name1 = players_team1.get(p1, f'P{p1}')
                 name2 = players_team1.get(p2, f'P{p2}')
                 conn_data1.append({
-                    'De': name1.split()[-1],
-                    'Para': name2.split()[-1],
+                    '#': rank,
+                    'Combinación': f"{name1} → {name2}",
                     'Pases': count
                 })
-            st.dataframe(pd.DataFrame(conn_data1), use_container_width=True, hide_index=True)
+            
+            df1 = pd.DataFrame(conn_data1)
+            st.dataframe(
+                df1,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    '#': st.column_config.NumberColumn(
+                        '#',
+                        width='small',
+                    ),
+                    'Combinación': st.column_config.TextColumn(
+                        'Combinación',
+                        width='large',
+                    ),
+                    'Pases': st.column_config.NumberColumn(
+                        'Pases',
+                        width='small',
+                    )
+                }
+            )
     
     with col2:
         st.markdown(f"**{teams[team_ids[1]]}**")
-        top_conn2 = sorted(connections2.items(), key=lambda x: x[1], reverse=True)[:5]
+        top_conn2 = sorted(connections2.items(), key=lambda x: x[1], reverse=True)[:10]
         
         if top_conn2:
             conn_data2 = []
-            for (p1, p2), count in top_conn2:
+            for rank, ((p1, p2), count) in enumerate(top_conn2, 1):
                 name1 = players_team2.get(p1, f'P{p1}')
                 name2 = players_team2.get(p2, f'P{p2}')
                 conn_data2.append({
-                    'De': name1.split()[-1],
-                    'Para': name2.split()[-1],
+                    '#': rank,
+                    'Combinación': f"{name1} → {name2}",
                     'Pases': count
                 })
-            st.dataframe(pd.DataFrame(conn_data2), use_container_width=True, hide_index=True)
+            
+            df2 = pd.DataFrame(conn_data2)
+            st.dataframe(
+                df2,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    '#': st.column_config.NumberColumn(
+                        '#',
+                        width='small',
+                    ),
+                    'Combinación': st.column_config.TextColumn(
+                        'Combinación',
+                        width='large',
+                    ),
+                    'Pases': st.column_config.NumberColumn(
+                        'Pases',
+                        width='small',
+                    )
+                }
+            )
 
 def show_passing_network_tab():
     """Muestra la pestaña de análisis de redes de pases"""
