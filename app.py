@@ -4,11 +4,23 @@ app.py - Sistema completo con Stage, Fechas y Top Progresivos
 
 import streamlit as st
 import pandas as pd
-import plotly.graph_objects as go
 import numpy as np
 from datetime import datetime
 
 st.set_page_config(page_title="Análisis de Eventos", page_icon="⚽", layout="wide")
+
+st.error("""⚠️ **Este archivo requiere Plotly**
+
+Este archivo `app.py` original usa Plotly para visualizaciones. 
+
+Para usarlo, instala Plotly:
+```
+pip install plotly
+```
+
+O usa la nueva aplicación `streamlit_app.py` que no requiere Plotly.
+""")
+st.stop()
 
 st.markdown("""
 <style>
