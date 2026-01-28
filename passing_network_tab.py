@@ -774,14 +774,52 @@ def process_json_file(json_path):
         else:
             st.warning("⚠️ No hay datos de pases")
 
+
+def load_matches_metadata(raw_dir, scope='global', country=None, competition=None):
+    """
+    Carga metadata de partidos según el nivel de scope solicitado.
+    
+    Args:
+        raw_dir: Ruta base de data/raw
+        scope: 'global', 'country', o 'competition'
+        country: Nombre del país (requerido si scope='country' o 'competition')
+        competition: Nombre de la competición (requerido si scope='competition')
+    
+    Returns:
+        DataFrame con metadata de partidos o None si no existe
+    """
+    metadata_file = None
+    
+    if scope == 'global':
+        metadata_file = raw_dir / 'matches_metadata.json'
+    elif scope == 'country' and country:
+        metadata_file = raw_dir / country / 'matches_metadata.json'
+    elif scope == 'competition' and country and competition:
+        metadata_file = raw_dir / country / competition / 'matches_metadata.json'
+    
+    if metadata_file and metadata_file.exists():
+        try:
+            with open(metadata_file, 'r', encoding='utf-8') as f:
+                metadata = json.load(f)
+            
+            if metadata:
+                df = pd.DataFrame(metadata)
+                df['date'] = pd.to_datetime(df['date'])
+                return df.sort_values('date', ascending=False)
+        except Exception as e:
+            st.error(f"Error cargando metadata: {e}")
+    
+    return None
+
 def show_passing_network_tab():
-    """Muestra la pestaña de análisis de redes de pases"""
+    """Muestra la pestaña de análisis de redes de pases con sistema de metadata"""
     
     st.markdown("### 🕸️ Passing Network Analysis")
     st.markdown("**Comparación lado a lado de ambos equipos**")
     
     # Escanear carpetas
     data_scan = scan_data_directories()
+    raw_dir = data_scan['raw_dir']
     
     # Modo de selección
     st.markdown("---")
@@ -796,7 +834,9 @@ def show_passing_network_tab():
     
     with col2:
         if data_mode == "JSON Crudos":
-            st.info(f"📊 {len(data_scan['json_files'])} archivos JSON locales")
+            # Contar JSONs en toda la estructura
+            total_jsons = sum(1 for _ in raw_dir.rglob('*.json') if _.name != 'matches_metadata.json')
+            st.info(f"📊 {total_jsons} archivos JSON disponibles")
         else:
             st.info(f"📦 {len(data_scan['parquet_files'])} archivos Parquet")
     
@@ -828,40 +868,177 @@ def show_passing_network_tab():
     
     else:  # JSON Crudos
         st.markdown("---")
-        st.markdown("#### 📁 Selección de archivos JSON")
+        st.markdown("#### 🌎 Selección de Partidos")
         
-        # Opción 1: Archivos locales (solo funciona en localhost)
-        if data_scan['json_files']:
-            st.success(f"✅ {len(data_scan['json_files'])} archivos locales detectados en data/raw/")
+        # Verificar si existe metadata global
+        global_metadata_file = raw_dir / 'matches_metadata.json'
+        
+        if not global_metadata_file.exists():
+            st.warning("⚠️ No se encontró metadata. Ejecuta primero: `python generate_metadata.py`")
+            st.info("💡 O sube un archivo JSON manualmente:")
             
-            json_options = {f.name: f for f in data_scan['json_files']}
-            
-            selected_name = st.selectbox(
-                "Selecciona archivo JSON local:",
-                list(json_options.keys())
+            # Fallback: File uploader
+            uploaded_file = st.file_uploader(
+                "Arrastra un archivo JSON del partido:",
+                type=['json'],
+                help="Sube un archivo JSON con datos OPTA / Stats Perform"
             )
             
-            if selected_name:
-                selected_file = json_options[selected_name]
-                process_json_file(selected_file)
-        else:
-            st.warning("⚠️ No hay archivos JSON en data/raw/ (carpeta local)")
+            if uploaded_file is not None:
+                with tempfile.NamedTemporaryFile(delete=False, suffix='.json', mode='w', encoding='utf-8') as tmp:
+                    tmp.write(uploaded_file.getvalue().decode('utf-8'))
+                    tmp_path = Path(tmp.name)
+                
+                st.info(f"📄 Archivo subido: {uploaded_file.name}")
+                process_json_file(tmp_path)
+            return
         
-        # Opción 2: Subir archivo (funciona en Streamlit Cloud)
+        # Cargar metadata global
+        df_matches = load_matches_metadata(raw_dir, scope='global')
+        
+        if df_matches is None or len(df_matches) == 0:
+            st.warning("⚠️ No hay partidos en la metadata. Agrega JSONs y ejecuta: `python generate_metadata.py`")
+            return
+        
+        # SISTEMA DE FILTROS AVANZADOS
+        st.markdown("##### 🔍 Filtros de Búsqueda")
+        
+        # Nivel de selección
+        col1, col2, col3 = st.columns([2, 1, 1])
+        
+        with col1:
+            selection_mode = st.radio(
+                "Seleccionar por:",
+                ["🌎 País", "🌍 Todos los países", "🏆 Competición específica"],
+                horizontal=True
+            )
+        
+        filtered_df = df_matches.copy()
+        
+        # Filtros según modo de selección
+        if selection_mode == "🌎 País":
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                countries = sorted(df_matches['country'].unique().tolist())
+                selected_country = st.selectbox("País:", countries, key='country_filter')
+                filtered_df = filtered_df[filtered_df['country'] == selected_country]
+            
+            with col2:
+                competitions = ['Todas'] + sorted(filtered_df['competition'].unique().tolist())
+                selected_comp = st.selectbox("Competición:", competitions, key='comp_filter')
+                if selected_comp != 'Todas':
+                    filtered_df = filtered_df[filtered_df['competition'] == selected_comp]
+            
+            with col3:
+                seasons = ['Todas'] + sorted(filtered_df['season'].unique().tolist(), reverse=True)
+                selected_season = st.selectbox("Temporada:", seasons, key='season_filter')
+                if selected_season != 'Todas':
+                    filtered_df = filtered_df[filtered_df['season'] == selected_season]
+        
+        elif selection_mode == "🏆 Competición específica":
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                # Crear lista única de competiciones con país
+                comp_options = sorted(
+                    df_matches[['country', 'competition', 'competition_full_name']]
+                    .drop_duplicates()
+                    .apply(lambda x: f"{x['country']} - {x['competition']}", axis=1)
+                    .tolist()
+                )
+                selected_comp_full = st.selectbox("Competición:", comp_options, key='comp_full_filter')
+                
+                # Extraer país y competición
+                country_part, comp_part = selected_comp_full.split(' - ')
+                filtered_df = filtered_df[
+                    (filtered_df['country'] == country_part) & 
+                    (filtered_df['competition'] == comp_part)
+                ]
+            
+            with col2:
+                seasons = ['Todas'] + sorted(filtered_df['season'].unique().tolist(), reverse=True)
+                selected_season = st.selectbox("Temporada:", seasons, key='season_comp_filter')
+                if selected_season != 'Todas':
+                    filtered_df = filtered_df[filtered_df['season'] == selected_season]
+        
+        # Búsqueda por equipo (común para todos los modos)
+        col1, col2 = st.columns([3, 1])
+        
+        with col1:
+            team_search = st.text_input(
+                "🔍 Buscar equipo:",
+                placeholder="Escribe el nombre de un equipo...",
+                help="Busca partidos que incluyan este equipo"
+            )
+            
+            if team_search:
+                filtered_df = filtered_df[
+                    filtered_df['description'].str.contains(team_search, case=False, na=False)
+                ]
+        
+        with col2:
+            st.markdown("<br>", unsafe_allow_html=True)
+            st.metric("Partidos", len(filtered_df))
+        
+        # Mostrar resultados
+        if len(filtered_df) == 0:
+            st.warning("⚠️ No se encontraron partidos con los filtros aplicados")
+            return
+        
         st.markdown("---")
-        st.markdown("##### 📤 O sube un archivo JSON:")
+        st.markdown(f"##### 📋 {len(filtered_df)} Partidos Encontrados")
         
-        uploaded_file = st.file_uploader(
-            "Arrastra un archivo JSON del partido:",
-            type=['json'],
-            help="Sube un archivo JSON con datos OPTA / Stats Perform"
+        # Crear opciones para selectbox con formato rico
+        match_options = {}
+        for idx, row in filtered_df.iterrows():
+            # Formato: 📅 DD/MM/YYYY | CODE | STAGE | Team1 vs Team2
+            date_str = row['date'].strftime('%d/%m/%Y')
+            code = row['competition_code'] if row['competition_code'] else row['competition'][:3].upper()
+            stage = row['stage'] if row['stage'] else ''
+            
+            display_parts = [
+                f"📅 {date_str}",
+                f"{code}",
+            ]
+            
+            if stage:
+                display_parts.append(f"{stage}")
+            
+            display_parts.append(f"{row['description']}")
+            
+            display_name = " | ".join(display_parts)
+            match_options[display_name] = row['filepath']
+        
+        # Selectbox con opciones formateadas
+        selected_display = st.selectbox(
+            "Selecciona el partido a analizar:",
+            list(match_options.keys()),
+            key='match_selector'
         )
         
-        if uploaded_file is not None:
-            # Guardar temporalmente
-            with tempfile.NamedTemporaryFile(delete=False, suffix='.json', mode='w', encoding='utf-8') as tmp:
-                tmp.write(uploaded_file.getvalue().decode('utf-8'))
-                tmp_path = Path(tmp.name)
+        if selected_display:
+            selected_filepath = match_options[selected_display]
+            selected_file = raw_dir / selected_filepath
             
-            st.info(f"📄 Archivo subido: {uploaded_file.name}")
-            process_json_file(tmp_path)
+            # Mostrar info del partido seleccionado
+            selected_match = filtered_df[filtered_df['filepath'] == selected_filepath].iloc[0]
+            
+            col1, col2, col3, col4, col5 = st.columns(5)
+            with col1:
+                st.info(f"🌎 {selected_match['country']}")
+            with col2:
+                st.info(f"📅 {selected_match['date'].strftime('%d/%m/%Y')}")
+            with col3:
+                st.info(f"⏰ {selected_match['time']}")
+            with col4:
+                code = selected_match['competition_code'] if selected_match['competition_code'] else selected_match['competition'][:3]
+                st.info(f"🏆 {code}")
+            with col5:
+                st.info(f"📊 {selected_match['season']}")
+            
+            # Procesar el partido seleccionado
+            if selected_file.exists():
+                process_json_file(selected_file)
+            else:
+                st.error(f"❌ Archivo no encontrado: {selected_file}")
