@@ -128,7 +128,8 @@ def extract_passes_stats_perform(match_data, team_id, period=None, time_range=No
             elif q.get('qualifierId') == 141:
                 end_y = float(q.get('value', 0))
         
-        outcome = event.get('outcomeType', 0)
+        # FIX CRÍTICO: usar 'outcome' NO 'outcomeType'
+        outcome = event.get('outcome', 0)
         is_successful = outcome == 1
         
         passes.append({
@@ -295,79 +296,78 @@ def get_team_names_f24(match_data):
     return teams
 
 def calculate_pass_network_positions(passes, player_names, invert_coords=False):
-    """Calcula posiciones promedio y conexiones entre jugadores"""
-    player_positions = {}
-    player_pass_counts = {}
-    connections = {}
+    """Calcula posiciones promedio y conexiones entre jugadores usando método mplsoccer"""
+    import pandas as pd
     
-    for pass_event in passes:
-        player_id = pass_event['player_id']
-        
-        if player_id not in player_positions:
-            player_positions[player_id] = {'x': [], 'y': []}
-            player_pass_counts[player_id] = 0
-        
-        # Invertir coordenadas si es necesario (para equipo que ataca de derecha a izquierda)
-        x = pass_event['x']
-        y = pass_event['y']
-        
-        if invert_coords:
-            x = 100 - x
-            y = 100 - y
-        
-        player_positions[player_id]['x'].append(x)
-        player_positions[player_id]['y'].append(y)
-        
-        if pass_event['outcome']:
-            player_pass_counts[player_id] += 1
+    if not passes:
+        return {}, {}
     
+    # Convertir a DataFrame para facilitar procesamiento
+    df = pd.DataFrame(passes)
+    
+    # Aplicar inversión de coordenadas si es necesario
+    if invert_coords:
+        df['x'] = 100 - df['x']
+        df['y'] = 100 - df['y']
+        df.loc[df['end_x'].notnull(), 'end_x'] = 100 - df.loc[df['end_x'].notnull(), 'end_x']
+        df.loc[df['end_y'].notnull(), 'end_y'] = 100 - df.loc[df['end_y'].notnull(), 'end_y']
+    
+    # Calcular posiciones promedio por jugador
+    avg_locs = df.groupby('player_id').agg({
+        'x': 'mean',
+        'y': 'mean'
+    })
+    
+    # Contar pases exitosos por jugador
+    pass_counts = df[df['outcome'] == True].groupby('player_id').size()
+    
+    # Construir diccionario de posiciones
     avg_positions = {}
-    for player_id, positions in player_positions.items():
+    for player_id in avg_locs.index:
         avg_positions[player_id] = {
-            'x': np.mean(positions['x']),
-            'y': np.mean(positions['y']),
+            'x': avg_locs.loc[player_id, 'x'],
+            'y': avg_locs.loc[player_id, 'y'],
             'name': player_names.get(player_id, f'Player {player_id}'),
-            'passes': player_pass_counts.get(player_id, 0)
+            'passes': int(pass_counts.get(player_id, 0))
         }
     
-    # Calcular conexiones usando proximidad de coordenadas finales
-    for i, pass_event in enumerate(passes):
-        if not pass_event['outcome'] or not pass_event['end_x'] or not pass_event['end_y']:
-            continue
-        
-        passer_id = pass_event['player_id']
-        end_x = pass_event['end_x']
-        end_y = pass_event['end_y']
-        
-        # Invertir coordenadas finales si es necesario
-        if invert_coords:
-            end_x = 100 - end_x
-            end_y = 100 - end_y
+    # Calcular conexiones usando el método de mplsoccer:
+    # Para cada pase exitoso, el receptor es el jugador en la posición final
+    connections = {}
+    
+    # Filtrar solo pases exitosos con coordenadas finales
+    successful_passes = df[
+        (df['outcome'] == True) & 
+        (df['end_x'].notnull()) & 
+        (df['end_y'].notnull())
+    ].copy()
+    
+    if len(successful_passes) == 0:
+        return avg_positions, connections
+    
+    # Para cada pase exitoso, encontrar el jugador más cercano a las coordenadas finales
+    for idx, pass_row in successful_passes.iterrows():
+        passer_id = pass_row['player_id']
+        end_x = pass_row['end_x']
+        end_y = pass_row['end_y']
         
         # Buscar el jugador más cercano a las coordenadas finales
         min_distance = float('inf')
         receiver_id = None
         
-        for j in range(i + 1, min(i + 6, len(passes))):
-            next_event = passes[j]
-            next_player = next_event['player_id']
+        for player_id, pos in avg_positions.items():
+            if player_id == passer_id:
+                continue
             
-            # Aplicar inversión a coordenadas del siguiente evento
-            next_x = next_event['x']
-            next_y = next_event['y']
-            if invert_coords:
-                next_x = 100 - next_x
-                next_y = 100 - next_y
+            # Distancia euclidiana entre coordenadas finales y posición promedio del jugador
+            distance = ((pos['x'] - end_x)**2 + (pos['y'] - end_y)**2)**0.5
             
-            # Calcular distancia euclidiana
-            distance = np.sqrt((next_x - end_x)**2 + (next_y - end_y)**2)
-            
-            if distance < min_distance and distance < 15:
+            if distance < min_distance:
                 min_distance = distance
-                receiver_id = next_player
+                receiver_id = player_id
         
-        # Agregar conexión si se encontró un receptor válido
-        if receiver_id and receiver_id != passer_id:
+        # Solo agregar conexión si encontramos un receptor razonablemente cercano
+        if receiver_id and min_distance < 25:  # Umbral de 25 unidades
             key = (passer_id, receiver_id)
             connections[key] = connections.get(key, 0) + 1
     
@@ -500,7 +500,7 @@ def process_json_file(json_path):
             "Pases mínimos (conexiones):",
             min_value=1,
             max_value=10,
-            value=2,
+            value=1,
             help="Mínimo número de pases entre dos jugadores para mostrar la conexión"
         )
     
