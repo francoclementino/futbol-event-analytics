@@ -73,7 +73,7 @@ def load_parquet_data(parquet_path):
         st.error(f"Error cargando parquet: {e}")
         return None
 
-def extract_passes(match_obj, team_id, period=None):
+def extract_passes(match_obj, team_id, period=None, time_range=None):
     """Extrae todos los pases de un equipo específico - soporta múltiples formatos"""
     
     if match_obj is None:
@@ -83,14 +83,14 @@ def extract_passes(match_obj, team_id, period=None):
     match_data = match_obj.get('data', {})
     
     if format_type == 'stats_perform':
-        return extract_passes_stats_perform(match_data, team_id, period)
+        return extract_passes_stats_perform(match_data, team_id, period, time_range)
     elif format_type == 'f24':
         return extract_passes_f24(match_data, team_id, period)
     else:
         st.error(f"❌ Formato '{format_type}' no soportado para extracción de pases")
         return []
 
-def extract_passes_stats_perform(match_data, team_id, period=None):
+def extract_passes_stats_perform(match_data, team_id, period=None, time_range=None):
     """Extrae pases del formato Stats Perform / Opta API"""
     passes = []
     
@@ -106,6 +106,15 @@ def extract_passes_stats_perform(match_data, team_id, period=None):
         
         if period and int(event.get('periodId', 0)) != period:
             continue
+        
+        # Filtro por rango de minutos
+        if time_range:
+            event_min = int(event.get('timeMin', 0))
+            if period == 2:  # Segundo tiempo
+                event_min += 45
+            
+            if not (time_range[0] <= event_min <= time_range[1]):
+                continue
         
         x = float(event.get('x', 0))
         y = float(event.get('y', 0))
@@ -285,7 +294,7 @@ def get_team_names_f24(match_data):
     
     return teams
 
-def calculate_pass_network_positions(passes, player_names):
+def calculate_pass_network_positions(passes, player_names, invert_coords=False):
     """Calcula posiciones promedio y conexiones entre jugadores"""
     player_positions = {}
     player_pass_counts = {}
@@ -298,8 +307,16 @@ def calculate_pass_network_positions(passes, player_names):
             player_positions[player_id] = {'x': [], 'y': []}
             player_pass_counts[player_id] = 0
         
-        player_positions[player_id]['x'].append(pass_event['x'])
-        player_positions[player_id]['y'].append(pass_event['y'])
+        # Invertir coordenadas si es necesario (para equipo que ataca de derecha a izquierda)
+        x = pass_event['x']
+        y = pass_event['y']
+        
+        if invert_coords:
+            x = 100 - x
+            y = 100 - y
+        
+        player_positions[player_id]['x'].append(x)
+        player_positions[player_id]['y'].append(y)
         
         if pass_event['outcome']:
             player_pass_counts[player_id] += 1
@@ -314,7 +331,6 @@ def calculate_pass_network_positions(passes, player_names):
         }
     
     # Calcular conexiones usando proximidad de coordenadas finales
-    # Un pase exitoso se conecta al jugador más cercano a las coordenadas finales
     for i, pass_event in enumerate(passes):
         if not pass_event['outcome'] or not pass_event['end_x'] or not pass_event['end_y']:
             continue
@@ -323,8 +339,12 @@ def calculate_pass_network_positions(passes, player_names):
         end_x = pass_event['end_x']
         end_y = pass_event['end_y']
         
+        # Invertir coordenadas finales si es necesario
+        if invert_coords:
+            end_x = 100 - end_x
+            end_y = 100 - end_y
+        
         # Buscar el jugador más cercano a las coordenadas finales
-        # entre los eventos subsiguientes (siguientes 5 eventos)
         min_distance = float('inf')
         receiver_id = None
         
@@ -332,10 +352,17 @@ def calculate_pass_network_positions(passes, player_names):
             next_event = passes[j]
             next_player = next_event['player_id']
             
-            # Calcular distancia euclidiana
-            distance = np.sqrt((next_event['x'] - end_x)**2 + (next_event['y'] - end_y)**2)
+            # Aplicar inversión a coordenadas del siguiente evento
+            next_x = next_event['x']
+            next_y = next_event['y']
+            if invert_coords:
+                next_x = 100 - next_x
+                next_y = 100 - next_y
             
-            if distance < min_distance and distance < 15:  # Umbral de 15 unidades
+            # Calcular distancia euclidiana
+            distance = np.sqrt((next_x - end_x)**2 + (next_y - end_y)**2)
+            
+            if distance < min_distance and distance < 15:
                 min_distance = distance
                 receiver_id = next_player
         
@@ -346,16 +373,27 @@ def calculate_pass_network_positions(passes, player_names):
     
     return avg_positions, connections
 
-def plot_passing_network(avg_positions, connections, team_name, ax, min_passes=3):
+def plot_passing_network(avg_positions, connections, team_name, ax, min_passes=3, team_color='cyan'):
     """Visualiza la red de pases en una cancha"""
     pitch = Pitch(pitch_type='custom', pitch_length=105, pitch_width=68,
-                  line_color='white', pitch_color='#1a5d1a', linewidth=1.5)
+                  line_color='white', pitch_color='#0a3d0a', linewidth=2)
     pitch.draw(ax=ax)
     
     scale_x = 105 / 100
     scale_y = 68 / 100
     
+    # Colores por equipo
+    if team_color == 'cyan':
+        node_color = '#00d9ff'
+        line_color = '#00d9ff'
+        text_color = '#003d4d'
+    else:  # orange
+        node_color = '#ff9500'
+        line_color = '#ff9500'
+        text_color = '#4d2d00'
+    
     # Dibujar conexiones primero (para que queden debajo de los nodos)
+    connections_drawn = 0
     for (passer, receiver), count in connections.items():
         if count < min_passes:
             continue
@@ -366,13 +404,20 @@ def plot_passing_network(avg_positions, connections, team_name, ax, min_passes=3
             x2 = avg_positions[receiver]['x'] * scale_x
             y2 = avg_positions[receiver]['y'] * scale_y
             
-            # Grosor proporcional al número de pases
-            width = max(1, min(count / 2, 8))  # Entre 1 y 8
-            alpha = min(0.9, 0.3 + (count / 20))  # Entre 0.3 y 0.9
+            # Grosor muy visible proporcional al número de pases
+            width = max(2, min(count / 1.5, 10))  # Entre 2 y 10
+            alpha = min(0.95, 0.4 + (count / 15))  # Entre 0.4 y 0.95
             
             ax.plot([x1, x2], [y1, y2], 
-                   color='#00d9ff', linewidth=width, alpha=alpha, zorder=1,
+                   color=line_color, linewidth=width, alpha=alpha, zorder=1,
                    solid_capstyle='round')
+            connections_drawn += 1
+    
+    # DEBUG: Mostrar cantidad de conexiones dibujadas
+    if connections_drawn == 0:
+        ax.text(52.5, 5, f'No hay conexiones con min_passes={min_passes}', 
+               fontsize=10, color='yellow', ha='center', weight='bold',
+               bbox=dict(boxstyle='round', facecolor='red', alpha=0.7))
     
     # Dibujar jugadores encima
     for player_id, pos in avg_positions.items():
@@ -381,13 +426,13 @@ def plot_passing_network(avg_positions, connections, team_name, ax, min_passes=3
         passes = pos['passes']
         
         # Tamaño proporcional a los pases
-        size = max(200, min(passes * 15, 1000))
+        size = max(300, min(passes * 20, 1200))
         
-        # Hexágonos blancos con borde
-        ax.scatter(x, y, s=size, c='white', edgecolors='#00d9ff', 
+        # Hexágonos de color con borde blanco
+        ax.scatter(x, y, s=size, c=node_color, edgecolors='white', 
                   linewidths=3, zorder=2, marker='h', alpha=0.95)
         
-        # Nombre del jugador (solo apellido)
+        # Nombre del jugador (solo apellido o iniciales)
         name_parts = pos['name'].split()
         if len(name_parts) > 1:
             # Si tiene nombre y apellido, mostrar apellido
@@ -396,8 +441,12 @@ def plot_passing_network(avg_positions, connections, team_name, ax, min_passes=3
             # Si es un nombre completo o inicial+apellido, mostrar todo
             short_name = pos['name']
         
-        # Texto en el hexágono
-        ax.text(x, y, short_name, fontsize=9, color='#0a2e0a',
+        # Limitar longitud del nombre
+        if len(short_name) > 10:
+            short_name = short_name[:10]
+        
+        # Texto BLANCO en el hexágono para que se vea en cualquier color
+        ax.text(x, y, short_name, fontsize=9, color='white',
                ha='center', va='center', weight='bold', zorder=3)
     
     ax.set_title(f'{team_name} - Passing Network', 
@@ -435,12 +484,14 @@ def process_json_file(json_path):
     
     # Filtros
     st.markdown("---")
-    col1, col2 = st.columns(2)
+    st.markdown("#### ⚙️ Filtros")
+    
+    col1, col2, col3 = st.columns(3)
     
     with col1:
         period = st.selectbox(
             "Período:",
-            [("Todos", None), ("1er Tiempo", 1), ("2do Tiempo", 2)],
+            [("Partido Completo", None), ("1er Tiempo", 1), ("2do Tiempo", 2)],
             format_func=lambda x: x[0]
         )[1]
     
@@ -449,42 +500,86 @@ def process_json_file(json_path):
             "Pases mínimos (conexiones):",
             min_value=1,
             max_value=10,
-            value=3
+            value=2,
+            help="Mínimo número de pases entre dos jugadores para mostrar la conexión"
         )
+    
+    with col3:
+        # Calcular duración máxima del partido
+        max_minutes = 90
+        if period == 1:
+            max_minutes = 45
+        elif period == 2:
+            max_minutes = 90
+        
+        use_time_filter = st.checkbox(
+            "Filtrar por minutos",
+            value=False,
+            help="Activar para analizar un rango específico de minutos"
+        )
+    
+    # Slider de rango de minutos (solo si está activado)
+    time_range = None
+    if use_time_filter:
+        st.markdown("**Rango de tiempo:**")
+        time_range = st.slider(
+            "Selecciona rango de minutos:",
+            min_value=0,
+            max_value=max_minutes,
+            value=(0, max_minutes),
+            help="Arrastra para seleccionar el rango de minutos a analizar"
+        )
+        st.info(f"🕒 Analizando minutos {time_range[0]} - {time_range[1]}")
     
     # Procesar y visualizar
     st.markdown("---")
     
     # Extraer datos de ambos equipos
-    passes_team1 = extract_passes(match_data, team_ids[0], period)
-    passes_team2 = extract_passes(match_data, team_ids[1], period)
+    passes_team1 = extract_passes(match_data, team_ids[0], period, time_range)
+    passes_team2 = extract_passes(match_data, team_ids[1], period, time_range)
+    
+    # DEBUG: Verificar si hay pases
+    if not passes_team1 and not passes_team2:
+        st.error("❌ No se encontraron pases en el rango seleccionado")
+        st.info("💡 Intenta ajustar los filtros (período o rango de minutos)")
+        return
     
     players_team1 = get_player_names(match_data, team_ids[0])
     players_team2 = get_player_names(match_data, team_ids[1])
     
     # Calcular redes
-    positions1, connections1 = calculate_pass_network_positions(passes_team1, players_team1)
-    positions2, connections2 = calculate_pass_network_positions(passes_team2, players_team2)
+    # Team 1: izquierda a derecha (normal)
+    # Team 2: derecha a izquierda (invertir coordenadas)
+    positions1, connections1 = calculate_pass_network_positions(passes_team1, players_team1, invert_coords=False)
+    positions2, connections2 = calculate_pass_network_positions(passes_team2, players_team2, invert_coords=True)
     
     # Métricas comparativas
     col1, col2, col3, col4 = st.columns(4)
     
+    successful_passes_1 = len([p for p in passes_team1 if p['outcome']])
+    successful_passes_2 = len([p for p in passes_team2 if p['outcome']])
+    total_passes_1 = len(passes_team1)
+    total_passes_2 = len(passes_team2)
+    
     with col1:
-        st.metric(f"{teams[team_ids[0]]} - Pases", len([p for p in passes_team1 if p['outcome']]))
+        st.metric(f"{teams[team_ids[0]]} - Pases", successful_passes_1)
     with col2:
-        acc1 = len([p for p in passes_team1 if p['outcome']]) / len(passes_team1) * 100 if passes_team1 else 0
+        acc1 = (successful_passes_1 / total_passes_1 * 100) if total_passes_1 > 0 else 0
         st.metric("Precisión", f"{acc1:.1f}%")
     with col3:
-        st.metric(f"{teams[team_ids[1]]} - Pases", len([p for p in passes_team2 if p['outcome']]))
+        st.metric(f"{teams[team_ids[1]]} - Pases", successful_passes_2)
     with col4:
-        acc2 = len([p for p in passes_team2 if p['outcome']]) / len(passes_team2) * 100 if passes_team2 else 0
+        acc2 = (successful_passes_2 / total_passes_2 * 100) if total_passes_2 > 0 else 0
         st.metric("Precisión", f"{acc2:.1f}%")
     
     # Visualización lado a lado
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 10), facecolor='#0e1117')
     
-    plot_passing_network(positions1, connections1, teams[team_ids[0]], ax1, min_passes)
-    plot_passing_network(positions2, connections2, teams[team_ids[1]], ax2, min_passes)
+    # Team 1: Cyan (ataca de izquierda a derecha)
+    plot_passing_network(positions1, connections1, teams[team_ids[0]], ax1, min_passes, team_color='cyan')
+    
+    # Team 2: Orange (ataca de derecha a izquierda, coordenadas ya invertidas)
+    plot_passing_network(positions2, connections2, teams[team_ids[1]], ax2, min_passes, team_color='orange')
     
     st.pyplot(fig)
     plt.close()
@@ -530,6 +625,8 @@ def process_json_file(json_path):
                     )
                 }
             )
+        else:
+            st.warning("⚠️ No hay conexiones suficientes para mostrar")
     
     with col2:
         st.markdown(f"**{teams[team_ids[1]]}**")
@@ -566,6 +663,8 @@ def process_json_file(json_path):
                     )
                 }
             )
+        else:
+            st.warning("⚠️ No hay conexiones suficientes para mostrar")
 
 def show_passing_network_tab():
     """Muestra la pestaña de análisis de redes de pases"""
