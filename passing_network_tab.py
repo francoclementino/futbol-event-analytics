@@ -1,4 +1,4 @@
-# passing_network_tab.py - VERSIÓN COMPLETA
+# passing_network_tab.py - VERSIÓN FINAL CORREGIDA
 # Módulo de análisis de redes de pases con soporte multi-formato y file uploader
 import streamlit as st
 import pandas as pd
@@ -382,15 +382,16 @@ def plot_passing_network(avg_positions, connections, team_name, ax, min_passes=3
     scale_x = 105 / 100
     scale_y = 68 / 100
     
-    # Colores por equipo
-    if team_color == 'cyan':
+    # Colores por equipo - NUEVO: Rojo para team 1
+    if team_color == 'red':
+        node_color = '#e74c3c'  # Rojo vibrante
+        line_color = '#e74c3c'
+    elif team_color == 'cyan':
         node_color = '#00d9ff'
         line_color = '#00d9ff'
-        text_color = '#003d4d'
     else:  # orange
         node_color = '#ff9500'
         line_color = '#ff9500'
-        text_color = '#4d2d00'
     
     # Dibujar conexiones primero (para que queden debajo de los nodos)
     connections_drawn = 0
@@ -404,8 +405,8 @@ def plot_passing_network(avg_positions, connections, team_name, ax, min_passes=3
             x2 = avg_positions[receiver]['x'] * scale_x
             y2 = avg_positions[receiver]['y'] * scale_y
             
-            # Grosor muy visible proporcional al número de pases
-            width = max(2, min(count / 1.5, 10))  # Entre 2 y 10
+            # Grosor muy visible proporcional al número de pases (estilo The Athletic)
+            width = max(2, min(count / 1.2, 12))  # Entre 2 y 12 (más ancho)
             alpha = min(0.95, 0.4 + (count / 15))  # Entre 0.4 y 0.95
             
             ax.plot([x1, x2], [y1, y2], 
@@ -419,35 +420,52 @@ def plot_passing_network(avg_positions, connections, team_name, ax, min_passes=3
                fontsize=10, color='yellow', ha='center', weight='bold',
                bbox=dict(boxstyle='round', facecolor='red', alpha=0.7))
     
+    # Calcular tamaño máximo de pases para escalar (estilo The Athletic)
+    max_passes = max([pos['passes'] for pos in avg_positions.values()]) if avg_positions else 1
+    
     # Dibujar jugadores encima
     for player_id, pos in avg_positions.items():
         x = pos['x'] * scale_x
         y = pos['y'] * scale_y
         passes = pos['passes']
         
-        # Tamaño proporcional a los pases
-        size = max(300, min(passes * 20, 1200))
+        # Tamaño MUY proporcional a los pases (estilo The Athletic)
+        # El jugador con más pases tendrá el círculo más grande
+        size = max(400, min((passes / max_passes) * 2000, 2500))
         
-        # Hexágonos de color con borde blanco
+        # Círculos de color con borde blanco (estilo The Athletic)
         ax.scatter(x, y, s=size, c=node_color, edgecolors='white', 
-                  linewidths=3, zorder=2, marker='h', alpha=0.95)
+                  linewidths=3, zorder=2, marker='o', alpha=0.95)
         
         # Nombre del jugador (solo apellido o iniciales)
         name_parts = pos['name'].split()
         if len(name_parts) > 1:
-            # Si tiene nombre y apellido, mostrar apellido
-            short_name = name_parts[-1]
+            short_name = name_parts[-1]  # Apellido
         else:
-            # Si es un nombre completo o inicial+apellido, mostrar todo
             short_name = pos['name']
         
         # Limitar longitud del nombre
         if len(short_name) > 10:
             short_name = short_name[:10]
         
-        # Texto BLANCO en el hexágono para que se vea en cualquier color
-        ax.text(x, y, short_name, fontsize=9, color='white',
-               ha='center', va='center', weight='bold', zorder=3)
+        # NUEVO: Texto arriba o abajo según posición Y
+        # Si está en la mitad superior (y > 34), texto abajo
+        # Si está en la mitad inferior (y <= 34), texto arriba
+        if y > 34:  # Mitad superior
+            text_y = y - 4  # Texto abajo del círculo
+            va = 'top'
+        else:  # Mitad inferior
+            text_y = y + 4  # Texto arriba del círculo
+            va = 'bottom'
+        
+        # Texto BLANCO con borde negro (estilo The Athletic)
+        import matplotlib.patheffects as path_effects
+        text = ax.text(x, text_y, short_name, fontsize=10, color='white',
+                      ha='center', va=va, weight='bold', zorder=3)
+        text.set_path_effects([
+            path_effects.Stroke(linewidth=2, foreground='black'),
+            path_effects.Normal()
+        ])
     
     ax.set_title(f'{team_name} - Passing Network', 
                 fontsize=16, weight='bold', color='white', pad=15)
@@ -575,8 +593,8 @@ def process_json_file(json_path):
     # Visualización lado a lado
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 10), facecolor='#0e1117')
     
-    # Team 1: Cyan (ataca de izquierda a derecha)
-    plot_passing_network(positions1, connections1, teams[team_ids[0]], ax1, min_passes, team_color='cyan')
+    # Team 1: ROJO (ataca de izquierda a derecha)
+    plot_passing_network(positions1, connections1, teams[team_ids[0]], ax1, min_passes, team_color='red')
     
     # Team 2: Orange (ataca de derecha a izquierda, coordenadas ya invertidas)
     plot_passing_network(positions2, connections2, teams[team_ids[1]], ax2, min_passes, team_color='orange')
@@ -584,7 +602,9 @@ def process_json_file(json_path):
     st.pyplot(fig)
     plt.close()
     
-    # Tablas de conexiones principales
+    # ====================
+    # TABLAS DE COMBINACIONES CON FORMATO CONDICIONAL
+    # ====================
     st.markdown("---")
     st.subheader("📊 Top 10 Combinaciones")
     
@@ -605,25 +625,27 @@ def process_json_file(json_path):
                     'Pases': count
                 })
             
-            df1 = pd.DataFrame(conn_data1)
+            df_conn1 = pd.DataFrame(conn_data1)
+            
+            # NUEVO: Formato condicional verde→rojo
+            max_val = df_conn1['Pases'].max()
+            min_val = df_conn1['Pases'].min()
+            
+            def color_scale_conn(val):
+                if max_val == min_val:
+                    return 'background-color: #90EE90'
+                # Escala de verde (#90EE90) a rojo (#FF6B6B)
+                ratio = (val - min_val) / (max_val - min_val)
+                r = int(144 + (255 - 144) * (1 - ratio))
+                g = int(238 - (238 - 107) * (1 - ratio))
+                b = int(144 - (144 - 107) * (1 - ratio))
+                return f'background-color: rgb({r},{g},{b})'
+            
+            styled_conn1 = df_conn1.style.applymap(color_scale_conn, subset=['Pases'])
             st.dataframe(
-                df1,
+                styled_conn1,
                 use_container_width=True,
-                hide_index=True,
-                column_config={
-                    '#': st.column_config.NumberColumn(
-                        '#',
-                        width='small',
-                    ),
-                    'Combinación': st.column_config.TextColumn(
-                        'Combinación',
-                        width='large',
-                    ),
-                    'Pases': st.column_config.NumberColumn(
-                        'Pases',
-                        width='small',
-                    )
-                }
+                hide_index=True
             )
         else:
             st.warning("⚠️ No hay conexiones suficientes para mostrar")
@@ -643,28 +665,114 @@ def process_json_file(json_path):
                     'Pases': count
                 })
             
-            df2 = pd.DataFrame(conn_data2)
+            df_conn2 = pd.DataFrame(conn_data2)
+            
+            # NUEVO: Formato condicional verde→rojo
+            max_val = df_conn2['Pases'].max()
+            min_val = df_conn2['Pases'].min()
+            
+            def color_scale_conn(val):
+                if max_val == min_val:
+                    return 'background-color: #90EE90'
+                ratio = (val - min_val) / (max_val - min_val)
+                r = int(144 + (255 - 144) * (1 - ratio))
+                g = int(238 - (238 - 107) * (1 - ratio))
+                b = int(144 - (144 - 107) * (1 - ratio))
+                return f'background-color: rgb({r},{g},{b})'
+            
+            styled_conn2 = df_conn2.style.applymap(color_scale_conn, subset=['Pases'])
             st.dataframe(
-                df2,
+                styled_conn2,
                 use_container_width=True,
-                hide_index=True,
-                column_config={
-                    '#': st.column_config.NumberColumn(
-                        '#',
-                        width='small',
-                    ),
-                    'Combinación': st.column_config.TextColumn(
-                        'Combinación',
-                        width='large',
-                    ),
-                    'Pases': st.column_config.NumberColumn(
-                        'Pases',
-                        width='small',
-                    )
-                }
+                hide_index=True
             )
         else:
             st.warning("⚠️ No hay conexiones suficientes para mostrar")
+    
+    # ====================
+    # TABLAS DE PASES INDIVIDUALES CON FORMATO CONDICIONAL
+    # ====================
+    st.markdown("---")
+    st.subheader("🎯 Top 10 Jugadores por Pases")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown(f"**{teams[team_ids[0]]}**")
+        
+        # Extraer pases por jugador
+        player_pass_data1 = []
+        for player_id, pos in positions1.items():
+            player_pass_data1.append({
+                'Jugador': pos['name'],
+                'Pases': pos['passes']
+            })
+        
+        if player_pass_data1:
+            df_passes1 = pd.DataFrame(player_pass_data1)
+            df_passes1 = df_passes1.sort_values('Pases', ascending=False).head(10).reset_index(drop=True)
+            df_passes1.insert(0, '#', range(1, len(df_passes1) + 1))
+            
+            # Formato condicional: verde (máximo) a rojo (mínimo)
+            max_val = df_passes1['Pases'].max()
+            min_val = df_passes1['Pases'].min()
+            
+            def color_scale(val):
+                if max_val == min_val:
+                    return 'background-color: #90EE90'
+                # Escala de verde (#90EE90) a rojo (#FF6B6B)
+                ratio = (val - min_val) / (max_val - min_val)
+                r = int(144 + (255 - 144) * (1 - ratio))
+                g = int(238 - (238 - 107) * (1 - ratio))
+                b = int(144 - (144 - 107) * (1 - ratio))
+                return f'background-color: rgb({r},{g},{b})'
+            
+            styled_df1 = df_passes1.style.applymap(color_scale, subset=['Pases'])
+            st.dataframe(
+                styled_df1,
+                use_container_width=True,
+                hide_index=True
+            )
+        else:
+            st.warning("⚠️ No hay datos de pases")
+    
+    with col2:
+        st.markdown(f"**{teams[team_ids[1]]}**")
+        
+        # Extraer pases por jugador
+        player_pass_data2 = []
+        for player_id, pos in positions2.items():
+            player_pass_data2.append({
+                'Jugador': pos['name'],
+                'Pases': pos['passes']
+            })
+        
+        if player_pass_data2:
+            df_passes2 = pd.DataFrame(player_pass_data2)
+            df_passes2 = df_passes2.sort_values('Pases', ascending=False).head(10).reset_index(drop=True)
+            df_passes2.insert(0, '#', range(1, len(df_passes2) + 1))
+            
+            # Formato condicional: verde (máximo) a rojo (mínimo)
+            max_val = df_passes2['Pases'].max()
+            min_val = df_passes2['Pases'].min()
+            
+            def color_scale(val):
+                if max_val == min_val:
+                    return 'background-color: #90EE90'
+                ratio = (val - min_val) / (max_val - min_val)
+                r = int(144 + (255 - 144) * (1 - ratio))
+                g = int(238 - (238 - 107) * (1 - ratio))
+                b = int(144 - (144 - 107) * (1 - ratio))
+                return f'background-color: rgb({r},{g},{b})'
+            
+            styled_df2 = df_passes2.style.applymap(color_scale, subset=['Pases'])
+            st.dataframe(
+                styled_df2,
+                use_container_width=True,
+                hide_index=True
+            )
+        else:
+            st.warning("⚠️ No hay datos de pases")
 
 def show_passing_network_tab():
     """Muestra la pestaña de análisis de redes de pases"""
