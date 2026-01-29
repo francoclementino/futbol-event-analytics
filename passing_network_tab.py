@@ -295,6 +295,26 @@ def get_team_names_f24(match_data):
     
     return teams
 
+def get_player_short_name(full_name):
+    """
+    Convierte nombre completo a formato con inicial.
+    Ejemplos:
+    - "Lionel Messi" -> "L. Messi"
+    - "Castro" -> "Castro"
+    - "Juan Manuel García" -> "J. García"
+    """
+    if not full_name or pd.isna(full_name):
+        return "Unknown"
+    
+    parts = str(full_name).strip().split()
+    
+    if len(parts) == 1:
+        return parts[0]
+    elif len(parts) == 2:
+        return f"{parts[0][0]}. {parts[1]}"
+    else:
+        return f"{parts[0][0]}. {parts[-1]}"
+
 def calculate_pass_network_positions(passes, player_names, invert_coords=False):
     """Calcula posiciones promedio y conexiones entre jugadores usando método mplsoccer"""
     import pandas as pd
@@ -437,12 +457,8 @@ def plot_passing_network(avg_positions, connections, team_name, ax, min_passes=3
         ax.scatter(x, y, s=size, c=node_color, edgecolors='white', 
                   linewidths=3, zorder=2, marker='o', alpha=0.95)
         
-        # Nombre del jugador (solo apellido o iniciales)
-        name_parts = pos['name'].split()
-        if len(name_parts) > 1:
-            short_name = name_parts[-1]  # Apellido
-        else:
-            short_name = pos['name']
+        # Nombre del jugador con inicial
+        short_name = get_player_short_name(pos['name'])
         
         # Limitar longitud del nombre
         if len(short_name) > 10:
@@ -779,42 +795,7 @@ def load_matches_metadata(raw_dir, scope='global', country=None, competition=Non
     """
     Carga metadata de partidos según el nivel de scope solicitado.
     
-    Args:
-        raw_dir: Ruta base de data/raw
-        scope: 'global', 'country', o 'competition'
-        country: Nombre del país (requerido si scope='country' o 'competition')
-        competition: Nombre de la competición (requerido si scope='competition')
-    
-    Returns:
-        DataFrame con metadata de partidos o None si no existe
-    """
-    metadata_file = None
-    
-    if scope == 'global':
-        metadata_file = raw_dir / 'matches_metadata.json'
-    elif scope == 'country' and country:
-        metadata_file = raw_dir / country / 'matches_metadata.json'
-    elif scope == 'competition' and country and competition:
-        metadata_file = raw_dir / country / competition / 'matches_metadata.json'
-    
-    if metadata_file and metadata_file.exists():
-        try:
-            with open(metadata_file, 'r', encoding='utf-8') as f:
-                metadata = json.load(f)
-            
-            if metadata:
-                df = pd.DataFrame(metadata)
-                df['date'] = pd.to_datetime(df['date'])
-                return df.sort_values('date', ascending=False)
-        except Exception as e:
-            st.error(f"Error cargando metadata: {e}")
-    
-    return None
-
-
-def load_matches_metadata(raw_dir, scope='global', country=None, competition=None):
-    """
-    Carga metadata de partidos según el nivel de scope solicitado.
+    CORRECCIÓN: Normaliza todos los paths a formato Unix (/)
     
     Args:
         raw_dir: Ruta base de data/raw
@@ -842,6 +823,11 @@ def load_matches_metadata(raw_dir, scope='global', country=None, competition=Non
             if metadata:
                 df = pd.DataFrame(metadata)
                 df['date'] = pd.to_datetime(df['date'])
+                
+                # CORRECCIÓN CRÍTICA: Normalizar paths a Unix format
+                if 'filepath' in df.columns:
+                    df['filepath'] = df['filepath'].str.replace('\\', '/', regex=False)
+                
                 return df.sort_values('date', ascending=False)
         except Exception as e:
             st.error(f"Error cargando metadata: {e}")
