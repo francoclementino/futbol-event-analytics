@@ -1,310 +1,186 @@
-# ⚽ Football Analytics Dashboard
+# ⚽ Football Event Analytics - Passing Network Analyzer
 
-> **Última actualización:** Enero 2025 - Versión 1.2
+## 🎯 **Análisis avanzado de datos de fútbol con OPTA F24**
 
-Sistema completo de análisis de fútbol con datos OPTA F24, incluyendo procesamiento por lotes y aplicación web interactiva con Streamlit.
-
----
-
-## 📋 Contenido
-
-- **`main.py`** - Procesador por lotes para análisis masivo de partidos
-- **`streamlit_app.py`** - Aplicación web interactiva
-- **`passing_network_tab.py`** - Módulo de análisis de redes de pases
-- **`config.py`** - Configuración centralizada
-- **`opta_events.json`** - Diccionario de 75 tipos de eventos OPTA
-- **`opta_qualifiers.json`** - Diccionario de 311 qualifiers OPTA
+Dashboard interactivo para analizar redes de pases y estadísticas avanzadas de partidos de fútbol usando datos OPTA.
 
 ---
 
-## 🚀 Instalación Rápida
+## 🚀 **USO EN STREAMLIT CLOUD:**
 
-### 1. Estructura de carpetas
+### **Cómo analizar un partido:**
+
+1. **Sube tu archivo JSON** (formato OPTA F24 o Stats Perform)
+2. La app detecta automáticamente el formato
+3. Selecciona filtros (período, rango de minutos, pases mínimos)
+4. ¡Disfruta las visualizaciones estilo The Athletic!
+
+### **Características:**
+
+✅ **Redes de Pases lado a lado** (ambos equipos)
+✅ **Visualizaciones profesionales** (estilo The Athletic)
+✅ **Análisis comparativo** (Top 10 combinaciones, Top 10 jugadores)
+✅ **Filtros avanzados** (período, rango de minutos, conexiones mínimas)
+✅ **Formato condicional** (verde → rojo según rendimiento)
+✅ **Detección automática de formato** (F24 / Stats Perform / Genérico)
+
+---
+
+## 📊 **PARA USO LOCAL CON BASE DE DATOS:**
+
+Si tienes una colección grande de JSONs organizados:
+
+### **1. Estructura de carpetas:**
 
 ```
-tu-proyecto/
-├── main.py                     # Procesador por lotes
-├── streamlit_app.py            # App web
-├── passing_network_tab.py      # Módulo de redes
-├── config.py                   # Configuración
-├── opta_events.json            # Eventos OPTA
-├── opta_qualifiers.json        # Qualifiers OPTA
-├── requirements.txt            # Dependencias
-├── data/                       # CREAR ESTA CARPETA
-│   ├── raw/                    # Archivos F24 JSON aquí
-│   └── processed/              # Salida del procesador
-└── README.md
+data/raw/
+├── Argentina/
+│   ├── Liga_Profesional/
+│   │   ├── 2024/
+│   │   │   ├── match1.json
+│   │   │   └── match2.json
+│   │   ├── 2025/
+│   │   └── matches_metadata.json
+│   └── matches_metadata.json
+└── matches_metadata.json
 ```
 
-### 2. Instalar dependencias
+### **2. Generar metadata:**
 
 ```bash
-pip install -r requirements.txt
+python generate_metadata.py
 ```
 
-O manualmente:
+Esto crea archivos `matches_metadata.json` con información indexada de todos los partidos.
+
+### **3. Usar interfaz con filtros:**
+
+Con metadata generada, la interfaz mostrará:
+- 🌎 Filtros por País / Competición / Temporada
+- 🔍 Búsqueda por equipo
+- 📅 Selección de partido específico o más reciente
+- ⚙️ Sidebar con configuración
+
+### **4. Ejecutar localmente:**
 
 ```bash
-pip install pandas numpy pyarrow openpyxl streamlit matplotlib mplsoccer
-```
-
-### 3. Preparar datos
-
-```bash
-# Crear carpeta de datos
-mkdir -p data/raw
-mkdir -p data/processed
-
-# Copiar tus archivos F24 JSON a data/raw/
-cp tus_archivos_f24/*.json data/raw/
+streamlit run app.py
 ```
 
 ---
 
-## 🎯 Uso
+## 🛠️ **SCRIPTS INCLUIDOS:**
 
-### Opción 1: Aplicación Web (Streamlit)
-
-**Para análisis interactivo y visualizaciones:**
-
-```bash
-streamlit run streamlit_app.py
-```
-
-Se abrirá en `http://localhost:8501`
-
-**Funcionalidades:**
-- 🕸️ **Passing Network**: Comparación lado a lado de redes de pases
-- 📊 **Match Stats**: (Próximamente)
-- 📈 **xT Analysis**: (Próximamente)
-- 🎯 **Shot Analysis**: (Próximamente)
-- 🏃 **Carry Analysis**: (Próximamente)
+- `generate_metadata.py` - Genera metadata de todos los JSONs organizados
+- `migrate_jsons.py` - Migra JSONs desde carpetas antiguas a nueva estructura
+- `update_to_sidebar.py` - Actualiza interfaz para usar sidebar (panel lateral)
 
 ---
 
-### Opción 2: Procesador por Lotes (main.py)
-
-**Para procesamiento masivo de múltiples partidos:**
-
-```bash
-python main.py
-```
-
-**Menú interactivo:**
+## 📦 **REQUISITOS:**
 
 ```
-1. Procesar UN partido específico
-2. Procesar TODOS los partidos en carpeta principal
-3. Procesar TODOS (incluir subcarpetas)
-4. Ver configuración actual
-5. Salir
+streamlit
+pandas
+matplotlib
+mplsoccer
+numpy
 ```
 
-**Salida:**
-- Archivos `.parquet` o `.csv` en `data/processed/`
-- Resumen de estadísticas
-- Detecta carries automáticamente
-- Calcula posesiones
+Ver `requirements.txt` para versiones específicas.
 
 ---
 
-## 📊 Datos de Salida
+## 🎨 **VISUALIZACIONES:**
 
-### Columnas principales generadas:
+### **Red de Pases:**
+- Círculos proporcionales al número de pases
+- Líneas proporcionales a conexiones entre jugadores
+- Colores diferenciados por equipo
+- Nombres posicionados inteligentemente
 
-**Eventos básicos:**
-- `match_id`, `team_id`, `player_id`
-- `type`, `type_name` (ej: "Pass", "Shot")
-- `x`, `y` (coordenadas OPTA 0-100)
-- `period_id`, `min`, `sec`
-- `outcome` (1=exitoso, 0=fallido)
-
-**Carries detectados:**
-- `carry_distance` (metros)
-- `carry_duration` (segundos)
-- `carry_end_x`, `carry_end_y`
-- `take_ons_during` (regates en el carry)
-
-**Análisis avanzado:**
-- `possession_id`
-- `xT` (Expected Threat - próximamente)
-- Zonas tácticas
+### **Tablas Comparativas:**
+- Top 10 combinaciones (pasador → receptor)
+- Top 10 jugadores por pases
+- Formato condicional (verde = mejor, rojo = peor)
 
 ---
 
-## ⚙️ Configuración
+## 📝 **FORMATOS SOPORTADOS:**
 
-### Archivo `config.py`
-
-```python
-# Detección de Carries
-CARRY_CONFIG = {
-    'min_length': 3.0,    # Metros mínimos
-    'max_length': 70.0,   # Metros máximos
-    'max_time_gap': 10.0, # Segundos máximos
-}
-
-# Formato de salida
-OUTPUT_CONFIG = {
-    'format': 'parquet',           # 'parquet' o 'csv'
-    'compression': 'gzip',         # Compresión
-    'save_by_match': False,        # Archivo por partido
-    'save_consolidated': True,     # Archivo único
-}
-```
-
----
-
-## 📖 Diccionarios OPTA
-
-### `opta_events.json`
-
-75 tipos de eventos mapeados:
-
+### **OPTA F24:**
 ```json
 {
-  "1": {"name": "Pass", "description": "Any pass attempt"},
-  "3": {"name": "Take On", "description": "Attempt to dribble past opponent"},
-  "7": {"name": "Tackle", "description": "A tackle attempt"},
-  "16": {"name": "Goal", "description": "Goal scored"},
-  ...
+  "Event": [
+    {
+      "type_id": 1,
+      "team_id": "123",
+      "player_id": "456",
+      "x": 50.5,
+      "y": 30.2
+    }
+  ]
 }
 ```
 
-### `opta_qualifiers.json`
-
-311 qualifiers mapeados:
-
+### **Stats Perform / Opta API:**
 ```json
 {
-  "1": {"name": "Long ball", "description": "Pass over 32 metres"},
-  "2": {"name": "Cross", "description": "Ball played into the box"},
-  "140": {"name": "Pass End X", "description": "End point x coordinate"},
-  ...
+  "matchInfo": {
+    "id": "abc123",
+    "contestant": [...]
+  },
+  "liveData": {
+    "event": [...]
+  }
 }
 ```
 
 ---
 
-## 🛠️ Personalización
+## 🔧 **CONFIGURACIÓN AVANZADA:**
 
-### Agregar nueva pestaña en Streamlit
+### **Sidebar (Panel Lateral):**
 
-1. Crear nuevo archivo: `nueva_tab.py`
+Para habilitar el diseño con sidebar (filtros en panel izquierdo):
 
-```python
-import streamlit as st
-
-def show_nueva_tab():
-    st.header("Mi Nueva Pestaña")
-    # Tu código aquí
-```
-
-2. Modificar `streamlit_app.py`:
-
-```python
-from nueva_tab import show_nueva_tab
-
-tabs = st.tabs(["🕸️ Passing Network", "🆕 Nueva Tab", ...])
-
-with tabs[1]:
-    show_nueva_tab()
-```
-
----
-
-## 🔍 Ejemplos de Uso
-
-### Streamlit: Analizar red de pases
-
-1. Ejecutar: `streamlit run streamlit_app.py`
-2. Seleccionar archivo F24 del dropdown
-3. Elegir periodo (completo/1°T/2°T)
-4. Ajustar mínimo de pases con slider
-5. Ver comparación lado a lado
-
-### Python: Procesar datos
-
-```python
-from main import FootballAnalyzer
-
-analyzer = FootballAnalyzer()
-
-# Procesar un partido
-df = analyzer.process_single_match(Path("data/raw/partido.json"))
-
-# Guardar resultados
-analyzer.save_results(df, filename="mi_analisis")
-```
-
----
-
-## 📚 Recursos
-
-### Documentación OPTA
-- **F24 Event Details**: Definiciones de eventos
-- **F24 Appendices**: Qualifiers y coordenadas
-
-### Bibliotecas usadas
-- **pandas**: Procesamiento de datos
-- **mplsoccer**: Visualizaciones de fútbol
-- **streamlit**: Aplicación web
-- **matplotlib**: Gráficos
-
-### Referencias académicas
-- Expected Threat (xT): Karun Singh
-- VAEP: KU Leuven
-- Friends of Tracking: Tutoriales de análisis
-
----
-
-## 🐛 Solución de Problemas
-
-### Error: "No se encuentra carpeta 'data'"
 ```bash
-mkdir data
+python update_to_sidebar.py
 ```
 
-### Error: "ModuleNotFoundError: No module named 'mplsoccer'"
-```bash
-pip install mplsoccer
-```
-
-### Error: "No JSON files found"
-- Verificar que los archivos estén en `data/` o `data/raw/`
-- Confirmar que el nombre contenga "f24" o "F24"
-
-### Streamlit no muestra gráficos
-- Verificar instalación: `pip install matplotlib --upgrade`
-- Revisar permisos de carpeta `data/`
+Esto actualiza la interfaz para un diseño más profesional tipo dashboard.
 
 ---
 
-## 📄 Licencia
+## 📖 **DOCUMENTACIÓN ADICIONAL:**
 
-Este proyecto usa datos OPTA bajo licencia apropiada.  
-Código desarrollado para análisis académico/profesional de fútbol.
-
----
-
-## 🤝 Contribuciones
-
-Para agregar nuevas funcionalidades:
-
-1. Fork del repositorio
-2. Crear rama feature: `git checkout -b feature/nueva-funcionalidad`
-3. Commit: `git commit -m 'Agregar nueva funcionalidad'`
-4. Push: `git push origin feature/nueva-funcionalidad`
-5. Pull Request
+- `README_SISTEMA_COMPLETO.md` - Guía completa del sistema
+- `README_SIDEBAR.md` - Documentación del diseño con sidebar
+- `INSTRUCCIONES_FINALES.md` - Pasos de instalación y uso
 
 ---
 
-## 📞 Contacto
+## 🤝 **CONTRIBUCIONES:**
 
-Para consultas sobre el sistema de análisis o datos OPTA.
+Este proyecto está en desarrollo activo. Sugerencias y mejoras son bienvenidas.
 
 ---
 
-**Versión:** 1.0  
-**Última actualización:** Enero 2025  
-**Compatibilidad:** Python 3.8+
+## 📄 **LICENCIA:**
+
+MIT License - Uso libre para análisis de fútbol.
+
+---
+
+## 🎯 **PRÓXIMAS CARACTERÍSTICAS:**
+
+- [ ] Análisis de xT (Expected Threat)
+- [ ] Heatmaps de posiciones
+- [ ] Análisis de presión
+- [ ] Exportación a PDF
+- [ ] Comparación entre múltiples partidos
+- [ ] Integración con más fuentes de datos
+
+---
+
+**Desarrollado con ❤️ para analistas de fútbol**

@@ -1,8 +1,12 @@
 # Archivos de datos
 *.parquet
-data/
 *.csv
 *.xlsx
+
+# IMPORTANTE: Excluir JSONs de partidos pero MANTENER metadata
+data/raw/**/*.json
+!data/raw/**/matches_metadata.json
+!data/raw/matches_metadata.json
 
 # Python
 __pycache__/
@@ -11,8 +15,8 @@ __pycache__/
 *.so
 .Python
 
-# Streamlit
-.streamlit/
+# Streamlit secrets
+.streamlit/secrets.toml
 
 # Carpetas de trabajo
 carpeta pruebas/
@@ -21,3 +25,7 @@ Codigos/
 # IDE
 .vscode/
 .idea/
+
+# Backups
+*_BACKUP.py
+*_BACKUP_*.py
