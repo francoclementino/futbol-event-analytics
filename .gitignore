@@ -3,7 +3,7 @@
 *.csv
 *.xlsx
 
-# IMPORTANTE: Excluir JSONs de partidos pero MANTENER metadata
+# JSONs de partidos (mantener solo metadata)
 data/raw/**/*.json
 !data/raw/**/matches_metadata.json
 !data/raw/matches_metadata.json
@@ -26,6 +26,29 @@ Codigos/
 .vscode/
 .idea/
 
-# Backups
-*_BACKUP.py
-*_BACKUP_*.py
+# Backups y temporales
+*_BACKUP*.py
+*.backup
+*_temp.py
+CORRECCIONES_*.py
+APLICAR_*.py
+CLEANUP.bat
+FIX_*.bat
+SETUP_*.bat
+UPDATE_*.bat
+
+# Documentación temporal
+INSTRUCCIONES_*.md
+README_SIDEBAR.md
+README_SISTEMA*.md
+CLOUD_VS_LOCAL.md
+DEPLOYMENT.md
+GUIA_*.md
+SOLUCION_*.md
+
+# Scripts no usados
+migrate_jsons.py
+upload_to_supabase.py
+passing_network_supabase*.py
+update_*.py
+*_show_passing_network_tab.txt
