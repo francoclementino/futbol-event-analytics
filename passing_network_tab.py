@@ -539,9 +539,9 @@ def process_json_file(json_path):
         )
     
     with col3:
-        # Calcular duración máxima del partido
+        # Calcular duración máxima del partido..
         max_minutes = 90
-        if period == 1:
+        if period == 1:s
             max_minutes = 45
         elif period == 2:
             max_minutes = 90
