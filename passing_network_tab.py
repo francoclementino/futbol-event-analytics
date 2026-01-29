@@ -518,7 +518,7 @@ def process_json_file(json_path):
             "Pases mínimos (conexiones):",
             min_value=1,
             max_value=10,
-            value=1,
+            value=2,
             help="Mínimo número de pases entre dos jugadores para mostrar la conexión"
         )
     
