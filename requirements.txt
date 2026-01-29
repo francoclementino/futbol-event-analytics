@@ -4,9 +4,11 @@ pandas
 numpy
 
 # ===== STREAMLIT Y VISUALIZACIÓN WEB =====
-streamlit
+streamlit>=1.31.1
 matplotlib
 mplsoccer
+altair>=5.0.0
+
 
 # ===== ANÁLISIS DE FÚTBOL (OPCIONAL - Para futuras funcionalidades) =====
 # statsbombpy     # Para datos StatsBomb
