@@ -9,12 +9,6 @@ from mplsoccer import Pitch
 import numpy as np
 import sys
 import tempfile
-from xt_calculator import (
-    calculate_player_xt,
-    calculate_connection_xt,
-    add_xt_to_passes,
-    get_xt_color_intensity
-)
 
 # Agregar carpeta Codigos al path para importar procesadores
 codigos_path = Path(__file__).parent / 'Codigos'
@@ -349,55 +343,7 @@ def calculate_pass_network_positions(passes, player_names, invert_coords=False):
     ].copy()
     
     if len(successful_passes) == 0:
-        
-    # Calcular xT por jugador
-    passes_data = []
-    for p in passes:
-        if p['outcome'] and p.get('end_x') is not None:
-            passes_data.append({
-                'player_id': p['player_id'],
-                'x': p['x'],
-                'y': p['y'],
-                'end_x': p['end_x'],
-                'end_y': p['end_y'],
-                'outcome': p['outcome'],
-                'receiver_id': None  # Se llenará después
-            })
-    
-    passes_df = pd.DataFrame(passes_data) if passes_data else pd.DataFrame()
-    
-    if not passes_df.empty:
-        player_xt_dict = calculate_player_xt(passes_df)
-        
-        # Agregar xT a avg_positions
-        for player_id in avg_positions:
-            avg_positions[player_id]['xt'] = player_xt_dict.get(player_id, 0.0)
-    else:
-        for player_id in avg_positions:
-            avg_positions[player_id]['xt'] = 0.0
-    
-    # Calcular xT por conexión
-    connection_xt = {}
-    for (p1, p2), count in connections.items():
-        if not passes_df.empty:
-            # Aproximar receptor basado en posición final
-            connection_passes = [p for p in passes if p['player_id'] == p1 and p['outcome']]
-            xt_total = 0
-            for cp in connection_passes:
-                if cp.get('end_x') is not None:
-                    # Calcular distancia a posición promedio del receptor
-                    if p2 in avg_positions:
-                        dist = ((avg_positions[p2]['x'] - cp['end_x'])**2 + 
-                               (avg_positions[p2]['y'] - cp['end_y'])**2)**0.5
-                        if dist < 25:  # Umbral de proximidad
-                            from xt_calculator import calculate_pass_xt
-                            xt = calculate_pass_xt(cp['x'], cp['y'], cp['end_x'], cp['end_y'])
-                            xt_total += xt
-            connection_xt[(p1, p2)] = xt_total
-        else:
-            connection_xt[(p1, p2)] = 0.0
-    
-    return avg_positions, connections, connection_xt
+        return avg_positions, connections
     
     # Para cada pase exitoso, encontrar el jugador más cercano a las coordenadas finales
     for idx, pass_row in successful_passes.iterrows():
@@ -425,55 +371,7 @@ def calculate_pass_network_positions(passes, player_names, invert_coords=False):
             key = (passer_id, receiver_id)
             connections[key] = connections.get(key, 0) + 1
     
-    
-    # Calcular xT por jugador
-    passes_data = []
-    for p in passes:
-        if p['outcome'] and p.get('end_x') is not None:
-            passes_data.append({
-                'player_id': p['player_id'],
-                'x': p['x'],
-                'y': p['y'],
-                'end_x': p['end_x'],
-                'end_y': p['end_y'],
-                'outcome': p['outcome'],
-                'receiver_id': None  # Se llenará después
-            })
-    
-    passes_df = pd.DataFrame(passes_data) if passes_data else pd.DataFrame()
-    
-    if not passes_df.empty:
-        player_xt_dict = calculate_player_xt(passes_df)
-        
-        # Agregar xT a avg_positions
-        for player_id in avg_positions:
-            avg_positions[player_id]['xt'] = player_xt_dict.get(player_id, 0.0)
-    else:
-        for player_id in avg_positions:
-            avg_positions[player_id]['xt'] = 0.0
-    
-    # Calcular xT por conexión
-    connection_xt = {}
-    for (p1, p2), count in connections.items():
-        if not passes_df.empty:
-            # Aproximar receptor basado en posición final
-            connection_passes = [p for p in passes if p['player_id'] == p1 and p['outcome']]
-            xt_total = 0
-            for cp in connection_passes:
-                if cp.get('end_x') is not None:
-                    # Calcular distancia a posición promedio del receptor
-                    if p2 in avg_positions:
-                        dist = ((avg_positions[p2]['x'] - cp['end_x'])**2 + 
-                               (avg_positions[p2]['y'] - cp['end_y'])**2)**0.5
-                        if dist < 25:  # Umbral de proximidad
-                            from xt_calculator import calculate_pass_xt
-                            xt = calculate_pass_xt(cp['x'], cp['y'], cp['end_x'], cp['end_y'])
-                            xt_total += xt
-            connection_xt[(p1, p2)] = xt_total
-        else:
-            connection_xt[(p1, p2)] = 0.0
-    
-    return avg_positions, connections, connection_xt
+    return avg_positions, connections
 
 def plot_passing_network(avg_positions, connections, team_name, ax, min_passes=3, team_color='cyan'):
     """Visualiza la red de pases en una cancha"""
@@ -484,12 +382,7 @@ def plot_passing_network(avg_positions, connections, team_name, ax, min_passes=3
     scale_x = 105 / 100
     scale_y = 68 / 100
     
-    # Colores por equipo
-    
-    # Calcular xT máximo para normalizar colores
-    max_xt = max([pos.get('xt', 0) for pos in avg_positions.values()])
-    if max_xt == 0:
-        max_xt = 1  # Evitar división por cero - NUEVO: Rojo para team 1
+    # Colores por equipo - NUEVO: Rojo para team 1
     if team_color == 'red':
         node_color = '#e74c3c'  # Rojo vibrante
         line_color = '#e74c3c'
@@ -544,8 +437,12 @@ def plot_passing_network(avg_positions, connections, team_name, ax, min_passes=3
         ax.scatter(x, y, s=size, c=node_color, edgecolors='white', 
                   linewidths=3, zorder=2, marker='o', alpha=0.95)
         
-        # Nombre del jugador con inicial
-        short_name = get_player_short_name(pos['name'])
+        # Nombre del jugador (solo apellido o iniciales)
+        name_parts = pos['name'].split()
+        if len(name_parts) > 1:
+            short_name = name_parts[-1]  # Apellido
+        else:
+            short_name = pos['name']
         
         # Limitar longitud del nombre
         if len(short_name) > 10:
@@ -729,8 +626,6 @@ def process_json_file(json_path):
                 })
             
             df_conn1 = pd.DataFrame(conn_data1)
-            if 'xT' in df_conn1.columns:
-                df_conn1['xT'] = df_conn1['xT'].apply(lambda x: f"{x:.3f}")
             
             # NUEVO: Formato condicional verde→rojo
             max_val = df_conn1['Pases'].max()
@@ -771,8 +666,6 @@ def process_json_file(json_path):
                 })
             
             df_conn2 = pd.DataFrame(conn_data2)
-            if 'xT' in df_conn2.columns:
-                df_conn2['xT'] = df_conn2['xT'].apply(lambda x: f"{x:.3f}")
             
             # NUEVO: Formato condicional verde→rojo
             max_val = df_conn2['Pases'].max()
@@ -817,8 +710,6 @@ def process_json_file(json_path):
         
         if player_pass_data1:
             df_passes1 = pd.DataFrame(player_pass_data1)
-            if 'xT' in df_passes1.columns:
-                df_passes1['xT'] = df_passes1['xT'].apply(lambda x: f"{x:.3f}")
             df_passes1 = df_passes1.sort_values('Pases', ascending=False).head(10).reset_index(drop=True)
             df_passes1.insert(0, '#', range(1, len(df_passes1) + 1))
             
@@ -858,8 +749,6 @@ def process_json_file(json_path):
         
         if player_pass_data2:
             df_passes2 = pd.DataFrame(player_pass_data2)
-            if 'xT' in df_passes2.columns:
-                df_passes2['xT'] = df_passes2['xT'].apply(lambda x: f"{x:.3f}")
             df_passes2 = df_passes2.sort_values('Pases', ascending=False).head(10).reset_index(drop=True)
             df_passes2.insert(0, '#', range(1, len(df_passes2) + 1))
             
@@ -890,8 +779,6 @@ def load_matches_metadata(raw_dir, scope='global', country=None, competition=Non
     """
     Carga metadata de partidos según el nivel de scope solicitado.
     
-    CORRECCIÓN: Normaliza todos los paths a formato Unix (/)
-    
     Args:
         raw_dir: Ruta base de data/raw
         scope: 'global', 'country', o 'competition'
@@ -918,11 +805,6 @@ def load_matches_metadata(raw_dir, scope='global', country=None, competition=Non
             if metadata:
                 df = pd.DataFrame(metadata)
                 df['date'] = pd.to_datetime(df['date'])
-                
-                # CORRECCIÓN CRÍTICA: Normalizar paths a Unix format
-                if 'filepath' in df.columns:
-                    df['filepath'] = df['filepath'].str.replace('\\', '/', regex=False)
-                
                 return df.sort_values('date', ascending=False)
         except Exception as e:
             st.error(f"Error cargando metadata: {e}")
@@ -934,8 +816,6 @@ def load_matches_metadata(raw_dir, scope='global', country=None, competition=Non
     """
     Carga metadata de partidos según el nivel de scope solicitado.
     
-    CORRECCIÓN: Normaliza todos los paths a formato Unix (/)
-    
     Args:
         raw_dir: Ruta base de data/raw
         scope: 'global', 'country', o 'competition'
@@ -962,37 +842,11 @@ def load_matches_metadata(raw_dir, scope='global', country=None, competition=Non
             if metadata:
                 df = pd.DataFrame(metadata)
                 df['date'] = pd.to_datetime(df['date'])
-                
-                # CORRECCIÓN CRÍTICA: Normalizar paths a Unix format
-                if 'filepath' in df.columns:
-                    df['filepath'] = df['filepath'].str.replace('\\', '/', regex=False)
-                
                 return df.sort_values('date', ascending=False)
         except Exception as e:
             st.error(f"Error cargando metadata: {e}")
     
     return None
-
-
-def get_player_short_name(full_name):
-    """
-    Convierte nombre completo a formato con inicial.
-    Ejemplos:
-    - "Lionel Messi" -> "L. Messi"
-    - "Castro" -> "Castro"
-    - "Juan Manuel García" -> "J. García"
-    """
-    if not full_name or pd.isna(full_name):
-        return "Unknown"
-    
-    parts = str(full_name).strip().split()
-    
-    if len(parts) == 1:
-        return parts[0]
-    elif len(parts) == 2:
-        return f"{parts[0][0]}. {parts[1]}"
-    else:
-        return f"{parts[0][0]}. {parts[-1]}"
 
 def show_passing_network_tab():
     """Muestra la pestaña de análisis de redes de pases con sidebar"""
