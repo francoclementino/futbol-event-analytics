@@ -811,6 +811,43 @@ def load_matches_metadata(raw_dir, scope='global', country=None, competition=Non
     
     return None
 
+
+def load_matches_metadata(raw_dir, scope='global', country=None, competition=None):
+    """
+    Carga metadata de partidos según el nivel de scope solicitado.
+    
+    Args:
+        raw_dir: Ruta base de data/raw
+        scope: 'global', 'country', o 'competition'
+        country: Nombre del país (requerido si scope='country' o 'competition')
+        competition: Nombre de la competición (requerido si scope='competition')
+    
+    Returns:
+        DataFrame con metadata de partidos o None si no existe
+    """
+    metadata_file = None
+    
+    if scope == 'global':
+        metadata_file = raw_dir / 'matches_metadata.json'
+    elif scope == 'country' and country:
+        metadata_file = raw_dir / country / 'matches_metadata.json'
+    elif scope == 'competition' and country and competition:
+        metadata_file = raw_dir / country / competition / 'matches_metadata.json'
+    
+    if metadata_file and metadata_file.exists():
+        try:
+            with open(metadata_file, 'r', encoding='utf-8') as f:
+                metadata = json.load(f)
+            
+            if metadata:
+                df = pd.DataFrame(metadata)
+                df['date'] = pd.to_datetime(df['date'])
+                return df.sort_values('date', ascending=False)
+        except Exception as e:
+            st.error(f"Error cargando metadata: {e}")
+    
+    return None
+
 def show_passing_network_tab():
     """Muestra la pestaña de análisis de redes de pases con sistema de metadata"""
     
