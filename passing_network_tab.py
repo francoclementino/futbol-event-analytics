@@ -539,7 +539,7 @@ def process_json_file(json_path):
         )
     
     with col3:
-        # Calcular duración máxima del partido..
+        # Calcular duración máxima del partido
         max_minutes = 90
         if period == 1:
             max_minutes = 45
@@ -795,8 +795,6 @@ def load_matches_metadata(raw_dir, scope='global', country=None, competition=Non
     """
     Carga metadata de partidos según el nivel de scope solicitado.
     
-    CORRECCIÓN: Normaliza todos los paths a formato Unix (/)
-    
     Args:
         raw_dir: Ruta base de data/raw
         scope: 'global', 'country', o 'competition'
@@ -823,11 +821,6 @@ def load_matches_metadata(raw_dir, scope='global', country=None, competition=Non
             if metadata:
                 df = pd.DataFrame(metadata)
                 df['date'] = pd.to_datetime(df['date'])
-                
-                # CORRECCIÓN CRÍTICA: Normalizar paths a Unix format
-                if 'filepath' in df.columns:
-                    df['filepath'] = df['filepath'].str.replace('\\', '/', regex=False)
-                
                 return df.sort_values('date', ascending=False)
         except Exception as e:
             st.error(f"Error cargando metadata: {e}")
@@ -850,29 +843,41 @@ def show_passing_network_tab():
     st.sidebar.markdown("## ⚙️ Configuración")
     st.sidebar.markdown("---")
     
+    # ========================================
+    # NUEVO: FILE UPLOADER PRIORITARIO
+    # ========================================
+    st.sidebar.markdown("### 📤 Subir JSON")
+    uploaded_file = st.sidebar.file_uploader(
+        "Arrastra un archivo JSON aquí:",
+        type=['json'],
+        help="Sube un archivo JSON con datos OPTA / Stats Perform",
+        key="json_uploader"
+    )
+    
+    if uploaded_file is not None:
+        # Procesar archivo subido
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.json', mode='wb') as tmp:
+            tmp.write(uploaded_file.getvalue())
+            tmp_path = Path(tmp.name)
+        
+        st.sidebar.success(f"✅ Archivo: {uploaded_file.name}")
+        st.sidebar.markdown("---")
+        
+        # Procesar el JSON subido
+        process_json_file(tmp_path)
+        return
+    
+    # Si no hay archivo subido, mostrar opciones de metadata
+    st.sidebar.info("💡 O selecciona de partidos guardados:")
+    st.sidebar.markdown("---")
+    
     # Verificar si existe metadata global
     global_metadata_file = raw_dir / 'matches_metadata.json'
     
     if not global_metadata_file.exists():
         st.sidebar.error("⚠️ No hay metadata")
         st.sidebar.info("Ejecuta: `python generate_metadata.py`")
-        
-        # Fallback: File uploader en sidebar
-        st.sidebar.markdown("---")
-        st.sidebar.markdown("### 📤 Subir JSON")
-        uploaded_file = st.sidebar.file_uploader(
-            "Arrastra un archivo JSON:",
-            type=['json'],
-            help="Sube un archivo JSON con datos OPTA / Stats Perform"
-        )
-        
-        if uploaded_file is not None:
-            with tempfile.NamedTemporaryFile(delete=False, suffix='.json', mode='w', encoding='utf-8') as tmp:
-                tmp.write(uploaded_file.getvalue().decode('utf-8'))
-                tmp_path = Path(tmp.name)
-            
-            st.info(f"📄 Archivo subido: {uploaded_file.name}")
-            process_json_file(tmp_path)
+        st.info("📤 **Sube un archivo JSON usando el sidebar** ⬅️")
         return
     
     # Cargar metadata global
@@ -881,6 +886,7 @@ def show_passing_network_tab():
     if df_matches is None or len(df_matches) == 0:
         st.sidebar.error("⚠️ No hay partidos")
         st.sidebar.info("Agrega JSONs y ejecuta: `python generate_metadata.py`")
+        st.info("📤 **Sube un archivo JSON usando el sidebar** ⬅️")
         return
     
     # ========================================
@@ -952,6 +958,7 @@ def show_passing_network_tab():
     
     if len(filtered_df) == 0:
         st.warning("⚠️ No se encontraron partidos con los filtros aplicados")
+        st.info("📤 **Sube un archivo JSON usando el sidebar** ⬅️")
         return
     
     selected_match = None
@@ -1003,10 +1010,15 @@ def show_passing_network_tab():
         
         st.markdown("---")
         
-        # Procesar el partido seleccionado
+        # FIX CRÍTICO: Construir path absoluto correctamente
         selected_file = raw_dir / selected_match['filepath']
         
-        if selected_file.exists():
-            process_json_file(selected_file)
-        else:
-            st.error(f"❌ Archivo no encontrado: {selected_file}")
+        # Verificar si el archivo existe
+        if not selected_file.exists():
+            st.error(f"❌ Archivo no encontrado en:")
+            st.code(str(selected_file))
+            st.info("📤 **Sube el archivo JSON usando el sidebar** ⬅️")
+            return
+        
+        # Procesar el partido seleccionado
+        process_json_file(selected_file)
