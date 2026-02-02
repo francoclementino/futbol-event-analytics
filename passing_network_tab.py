@@ -1,5 +1,5 @@
-# passing_network_tab.py - VERSIÓN DEFINITIVA CON xT
-# Módulo de análisis de redes de pases con Expected Threat integrado
+# passing_network_tab.py - VERSIÓN DEFINITIVA
+# Sistema de 3 variables visuales: Grosor=Combinaciones, Tamaño=Pases, Color=xT
 import streamlit as st
 import pandas as pd
 import json
@@ -10,7 +10,7 @@ import numpy as np
 import sys
 import tempfile
 
-# Agregar carpeta Codigos al path para importar procesadores
+# Agregar carpeta Codigos al path
 codigos_path = Path(__file__).parent / 'Codigos'
 if codigos_path.exists():
     sys.path.insert(0, str(codigos_path))
@@ -21,29 +21,19 @@ try:
     XT_AVAILABLE = True
 except ImportError:
     XT_AVAILABLE = False
-    st.warning("⚠️ Módulo xT no disponible")
 
 def scan_data_directories():
     """Escanea las carpetas de datos y devuelve archivos disponibles"""
     project_root = Path(__file__).parent
-    
-    # Carpetas de datos
     raw_dir = project_root / 'data' / 'raw'
     processed_dir = project_root / 'data' / 'processed'
-    
-    # Crear carpetas si no existen
     raw_dir.mkdir(parents=True, exist_ok=True)
     processed_dir.mkdir(parents=True, exist_ok=True)
-    
-    # Buscar archivos JSON (cualquier formato)
     json_files = sorted(raw_dir.glob('*.json'))
     parquet_files = sorted(processed_dir.glob('*.parquet'))
-    
-    # Buscar también en subdirectorios de processed
     for subdir in processed_dir.iterdir():
         if subdir.is_dir():
             parquet_files.extend(subdir.glob('*.parquet'))
-    
     return {
         'raw_dir': raw_dir,
         'processed_dir': processed_dir,
@@ -56,8 +46,6 @@ def load_match_data(json_path):
     try:
         with open(json_path, 'r', encoding='utf-8') as f:
             data = json.load(f)
-        
-        # Detectar formato
         if 'Event' in data:
             return {'format': 'f24', 'data': data}
         elif 'matchInfo' in data and 'liveData' in data:
@@ -65,76 +53,58 @@ def load_match_data(json_path):
         elif 'events' in data:
             return {'format': 'generic', 'data': data}
         else:
-            st.warning("⚠️ Formato de JSON no reconocido. Intentando parsear...")
+            st.warning("⚠️ Formato de JSON no reconocido")
             return {'format': 'unknown', 'data': data}
-            
     except Exception as e:
         st.error(f"Error cargando archivo: {e}")
         return None
 
 def extract_passes(match_obj, team_id, period=None, time_range=None):
-    """Extrae todos los pases de un equipo específico - soporta múltiples formatos"""
-    
+    """Extrae todos los pases de un equipo específico"""
     if match_obj is None:
         return []
-    
     format_type = match_obj.get('format', 'unknown')
     match_data = match_obj.get('data', {})
-    
     if format_type == 'stats_perform':
         return extract_passes_stats_perform(match_data, team_id, period, time_range)
     elif format_type == 'f24':
         return extract_passes_f24(match_data, team_id, period)
     else:
-        st.error(f"❌ Formato '{format_type}' no soportado para extracción de pases")
+        st.error(f"❌ Formato '{format_type}' no soportado")
         return []
 
 def extract_passes_stats_perform(match_data, team_id, period=None, time_range=None):
-    """Extrae pases del formato Stats Perform / Opta API"""
+    """Extrae pases del formato Stats Perform"""
     passes = []
-    
     if 'liveData' not in match_data or 'event' not in match_data['liveData']:
         return passes
-    
     for event in match_data['liveData']['event']:
         if event.get('typeId') != 1:
             continue
-        
         if str(event.get('contestantId')) != str(team_id):
             continue
-        
         if period and int(event.get('periodId', 0)) != period:
             continue
-        
-        # Filtro por rango de minutos
         if time_range:
             event_min = int(event.get('timeMin', 0))
             if period == 2:
                 event_min += 45
-            
             if not (time_range[0] <= event_min <= time_range[1]):
                 continue
-        
         x = float(event.get('x', 0))
         y = float(event.get('y', 0))
-        
         end_x, end_y = None, None
         qualifiers = event.get('qualifier', [])
-        
         for q in qualifiers:
             if q.get('qualifierId') == 140:
                 end_x = float(q.get('value', 0))
             elif q.get('qualifierId') == 141:
                 end_y = float(q.get('value', 0))
-        
         outcome = event.get('outcome', 0)
         is_successful = outcome == 1
-        
-        # Calcular xT si está disponible
         xt_value = 0.0
         if XT_AVAILABLE and is_successful and end_x is not None and end_y is not None:
             xt_value = calculate_pass_xt(x, y, end_x, end_y)
-        
         passes.append({
             'player_id': event.get('playerId'),
             'x': x,
@@ -146,41 +116,31 @@ def extract_passes_stats_perform(match_data, team_id, period=None, time_range=No
             'period': event.get('periodId'),
             'xt': xt_value
         })
-    
     return passes
 
 def extract_passes_f24(match_data, team_id, period=None):
-    """Extrae pases del formato F24 clásico de Opta"""
+    """Extrae pases del formato F24"""
     passes = []
-    
     for event in match_data.get('Event', []):
         if event.get('type_id') != 1:
             continue
-            
         if str(event.get('team_id')) != str(team_id):
             continue
-        
         if period and int(event.get('period_id', 0)) != period:
             continue
-        
         x = float(event.get('x', 0))
         y = float(event.get('y', 0))
-        
         end_x, end_y = None, None
         for q in event.get('qualifier', []):
             if q.get('qualifier_id') == 140:
                 end_x = float(q.get('value', 0))
             elif q.get('qualifier_id') == 141:
                 end_y = float(q.get('value', 0))
-        
         outcome = event.get('outcome', 1)
         is_successful = outcome == 1
-        
-        # Calcular xT si está disponible
         xt_value = 0.0
         if XT_AVAILABLE and is_successful and end_x is not None and end_y is not None:
             xt_value = calculate_pass_xt(x, y, end_x, end_y)
-        
         passes.append({
             'player_id': event.get('player_id'),
             'x': x,
@@ -191,18 +151,14 @@ def extract_passes_f24(match_data, team_id, period=None):
             'timestamp': event.get('timestamp'),
             'xt': xt_value
         })
-    
     return passes
 
 def get_player_names(match_obj, team_id):
-    """Extrae nombres de jugadores de un equipo - soporta múltiples formatos"""
-    
+    """Extrae nombres de jugadores"""
     if match_obj is None:
         return {}
-    
     format_type = match_obj.get('format', 'unknown')
     match_data = match_obj.get('data', {})
-    
     if format_type == 'stats_perform':
         return get_player_names_stats_perform(match_data, team_id)
     elif format_type == 'f24':
@@ -211,20 +167,16 @@ def get_player_names(match_obj, team_id):
         return {}
 
 def get_player_names_stats_perform(match_data, team_id):
-    """Extrae nombres de jugadores del formato Stats Perform"""
+    """Extrae nombres Stats Perform"""
     players = {}
-    
     if 'liveData' in match_data and 'event' in match_data['liveData']:
         for event in match_data['liveData']['event']:
             if str(event.get('contestantId')) != str(team_id):
                 continue
-            
             player_id = event.get('playerId')
             player_name = event.get('playerName')
-            
             if player_id and player_name and player_id not in players:
                 players[player_id] = player_name
-    
     if not players and 'liveData' in match_data and 'lineup' in match_data['liveData']:
         for team_lineup in match_data['liveData']['lineup']:
             if str(team_lineup.get('contestantId')) == str(team_id):
@@ -232,42 +184,32 @@ def get_player_names_stats_perform(match_data, team_id):
                     player_id = player.get('playerId')
                     first_name = player.get('matchName', '')
                     last_name = player.get('surname', '')
-                    
                     if first_name and last_name:
                         full_name = f"{first_name} {last_name}"
                     else:
                         full_name = first_name or last_name or player.get('shortName', f'Player {player_id}')
-                    
                     players[player_id] = full_name
                 break
-    
     return players
 
 def get_player_names_f24(match_data, team_id):
-    """Extrae nombres de jugadores del formato F24"""
+    """Extrae nombres F24"""
     players = {}
-    
     for event in match_data.get('Event', []):
         if str(event.get('team_id')) != str(team_id):
             continue
-        
         player_id = event.get('player_id')
         player_name = event.get('player_name', f'Player {player_id}')
-        
         if player_id and player_name:
             players[player_id] = player_name
-    
     return players
 
 def get_team_names(match_obj):
-    """Extrae nombres de equipos del match - soporta múltiples formatos"""
-    
+    """Extrae nombres de equipos"""
     if match_obj is None:
         return {}
-    
     format_type = match_obj.get('format', 'unknown')
     match_data = match_obj.get('data', {})
-    
     if format_type == 'stats_perform':
         return get_team_names_stats_perform(match_data)
     elif format_type == 'f24':
@@ -276,39 +218,31 @@ def get_team_names(match_obj):
         return {}
 
 def get_team_names_stats_perform(match_data):
-    """Extrae nombres de equipos del formato Stats Perform"""
+    """Extrae nombres de equipos Stats Perform"""
     teams = {}
-    
     if 'matchInfo' in match_data and 'contestant' in match_data['matchInfo']:
         for team in match_data['matchInfo']['contestant']:
             team_id = team.get('id')
             team_name = team.get('name', f'Team {team_id}')
-            
             if team_id:
                 teams[team_id] = team_name
-    
     return teams
 
 def get_team_names_f24(match_data):
-    """Extrae nombres de equipos del formato F24"""
+    """Extrae nombres de equipos F24"""
     teams = {}
-    
     for event in match_data.get('Event', []):
         team_id = str(event.get('team_id'))
         team_name = event.get('team_name', f'Team {team_id}')
-        
         if team_id not in teams:
             teams[team_id] = team_name
-    
     return teams
 
 def get_player_short_name(full_name):
     """Convierte nombre completo a formato con inicial"""
     if not full_name or pd.isna(full_name):
         return "Unknown"
-    
     parts = str(full_name).strip().split()
-    
     if len(parts) == 1:
         return parts[0]
     elif len(parts) == 2:
@@ -319,27 +253,20 @@ def get_player_short_name(full_name):
 def calculate_pass_network_positions(passes, player_names, invert_coords=False):
     """Calcula posiciones promedio y conexiones entre jugadores con xT"""
     import pandas as pd
-    
     if not passes:
         return {}, {}
-    
     df = pd.DataFrame(passes)
-    
     if invert_coords:
         df['x'] = 100 - df['x']
         df['y'] = 100 - df['y']
         df.loc[df['end_x'].notnull(), 'end_x'] = 100 - df.loc[df['end_x'].notnull(), 'end_x']
         df.loc[df['end_y'].notnull(), 'end_y'] = 100 - df.loc[df['end_y'].notnull(), 'end_y']
-    
     avg_locs = df.groupby('player_id').agg({'x': 'mean', 'y': 'mean'})
     pass_counts = df[df['outcome'] == True].groupby('player_id').size()
-    
-    # Calcular xT total por jugador
     if 'xt' in df.columns:
         player_xt = df[df['outcome'] == True].groupby('player_id')['xt'].sum()
     else:
         player_xt = pd.Series(dtype=float)
-    
     avg_positions = {}
     for player_id in avg_locs.index:
         avg_positions[player_id] = {
@@ -349,76 +276,125 @@ def calculate_pass_network_positions(passes, player_names, invert_coords=False):
             'passes': int(pass_counts.get(player_id, 0)),
             'xt': float(player_xt.get(player_id, 0.0))
         }
-    
     connections = {}
     connection_xt = {}
-    
     successful_passes = df[
         (df['outcome'] == True) & 
         (df['end_x'].notnull()) & 
         (df['end_y'].notnull())
     ].copy()
-    
     if len(successful_passes) == 0:
         return avg_positions, connections
-    
     for idx, pass_row in successful_passes.iterrows():
         passer_id = pass_row['player_id']
         end_x = pass_row['end_x']
         end_y = pass_row['end_y']
         pass_xt = pass_row.get('xt', 0.0)
-        
         min_distance = float('inf')
         receiver_id = None
-        
         for player_id, pos in avg_positions.items():
             if player_id == passer_id:
                 continue
-            
             distance = ((pos['x'] - end_x)**2 + (pos['y'] - end_y)**2)**0.5
-            
             if distance < min_distance:
                 min_distance = distance
                 receiver_id = player_id
-        
         if receiver_id and min_distance < 25:
             key = (passer_id, receiver_id)
             connections[key] = connections.get(key, 0) + 1
             connection_xt[key] = connection_xt.get(key, 0.0) + pass_xt
-    
-    # Agregar xT a conexiones
     for key in connections.keys():
         connections[key] = {
             'count': connections[key],
             'xt': connection_xt.get(key, 0.0)
         }
-    
     return avg_positions, connections
 
+def add_legend(ax, team_color='red'):
+    """Agrega leyenda visual explicativa con 3 variables"""
+    import matplotlib.patheffects as path_effects
+    
+    # Colores según equipo
+    if team_color == 'red':
+        color_light = '#e89b97'
+        color_mid = '#e74c3c'
+        color_dark = '#c0392b'
+    elif team_color == 'orange':
+        color_light = '#ffb366'
+        color_mid = '#ff9500'
+        color_dark = '#cc7700'
+    else:
+        color_light = '#66e6ff'
+        color_mid = '#00d9ff'
+        color_dark = '#00aac7'
+    
+    legend_y = 72
+    legend_x = 2
+    
+    # 1. CANTIDAD DE PASES (Tamaño de círculo)
+    text = ax.text(legend_x, legend_y, "Low pass count", 
+                   fontsize=8, color='white', weight='bold', ha='left')
+    text.set_path_effects([path_effects.Stroke(linewidth=2, foreground='black'), path_effects.Normal()])
+    
+    sizes = [300, 600, 1200]
+    for i, size in enumerate(sizes):
+        x = legend_x + 16 + (i * 5)
+        ax.scatter(x, legend_y, s=size, c=color_mid, edgecolors='white', linewidths=1.5, alpha=0.9, zorder=10)
+    
+    text = ax.text(legend_x + 33, legend_y, "High pass count", 
+                   fontsize=8, color='white', weight='bold', ha='left')
+    text.set_path_effects([path_effects.Stroke(linewidth=2, foreground='black'), path_effects.Normal()])
+    
+    # 2. CANTIDAD DE COMBINACIONES (Grosor de línea)
+    legend_y -= 6
+    text = ax.text(legend_x, legend_y, "Low pass combination", 
+                   fontsize=8, color='white', weight='bold', ha='left')
+    text.set_path_effects([path_effects.Stroke(linewidth=2, foreground='black'), path_effects.Normal()])
+    
+    widths = [2, 5, 10]
+    for i, width in enumerate(widths):
+        x_start = legend_x + 20 + (i * 6)
+        x_end = x_start + 4
+        ax.plot([x_start, x_end], [legend_y, legend_y],
+               color=color_mid, linewidth=width, alpha=0.9,
+               solid_capstyle='round', zorder=10)
+    
+    text = ax.text(legend_x + 42, legend_y, "High pass combination", 
+                   fontsize=8, color='white', weight='bold', ha='left')
+    text.set_path_effects([path_effects.Stroke(linewidth=2, foreground='black'), path_effects.Normal()])
+
 def plot_passing_network(avg_positions, connections, team_name, ax, min_passes=3, team_color='cyan'):
-    """Visualiza la red de pases en una cancha con xT"""
+    """Visualiza red de pases con 3 variables: Grosor=Count, Tamaño=Pases, Color=xT"""
     pitch = Pitch(pitch_type='custom', pitch_length=105, pitch_width=68,
-                  line_color='white', pitch_color='#0a3d0a', linewidth=2)
+                  line_color='white', pitch_color='#0a3d0a', linewidth=2,
+                  pad_top=10)
     pitch.draw(ax=ax)
     
     scale_x = 105 / 100
     scale_y = 68 / 100
     
+    # Colores base
     if team_color == 'red':
-        node_color = '#e74c3c'
-        line_color = '#e74c3c'
-    elif team_color == 'cyan':
-        node_color = '#00d9ff'
-        line_color = '#00d9ff'
+        base_rgb = (231, 76, 60)
+    elif team_color == 'orange':
+        base_rgb = (255, 149, 0)
     else:
-        node_color = '#ff9500'
-        line_color = '#ff9500'
+        base_rgb = (0, 217, 255)
     
-    # Encontrar máximo xT para escala de color
+    # Encontrar máximos para normalización
     if connections:
-        max_xt = max([conn.get('xt', 0) for conn in connections.values()] + [0.01])
+        max_xt_conn = max([conn.get('xt', 0) for conn in connections.values()] + [0.01])
+        max_count = max([conn.get('count', 1) for conn in connections.values()] + [1])
     else:
-        max_xt = 0.01
+        max_xt_conn = 0.01
+        max_count = 1
+    
+    if avg_positions:
+        max_xt_player = max([pos['xt'] for pos in avg_positions.values()] + [0.01])
+        max_passes = max([pos['passes'] for pos in avg_positions.values()] + [1])
+    else:
+        max_xt_player = 0.01
+        max_passes = 1
     
     connections_drawn = 0
     for (passer, receiver), conn_data in connections.items():
@@ -438,14 +414,25 @@ def plot_passing_network(avg_positions, connections, team_name, ax, min_passes=3
             x2 = avg_positions[receiver]['x'] * scale_x
             y2 = avg_positions[receiver]['y'] * scale_y
             
-            # Grosor basado en xT si disponible, sino en conteo
+            # GROSOR basado en CANTIDAD DE COMBINACIONES
+            width = max(2, min(count * 0.8, 12))
+            
+            # COLOR basado en xT (degradado de intensidad)
             if XT_AVAILABLE and xt > 0:
-                xt_norm = xt / max_xt
-                width = max(2, min(2 + xt_norm * 10, 12))
-                alpha = min(0.95, 0.5 + xt_norm * 0.45)
+                xt_norm = min(xt / max_xt_conn, 1.0)
+                intensity = 0.4 + (xt_norm * 0.6)
+                r = int(base_rgb[0] * intensity)
+                g = int(base_rgb[1] * intensity)
+                b = int(base_rgb[2] * intensity)
+                line_color = f'#{r:02x}{g:02x}{b:02x}'
+                alpha = 0.6 + (xt_norm * 0.35)
             else:
-                width = max(2, min(count / 1.2, 12))
-                alpha = min(0.95, 0.4 + (count / 15))
+                intensity = 0.7
+                r = int(base_rgb[0] * intensity)
+                g = int(base_rgb[1] * intensity)
+                b = int(base_rgb[2] * intensity)
+                line_color = f'#{r:02x}{g:02x}{b:02x}'
+                alpha = 0.8
             
             ax.plot([x1, x2], [y1, y2], 
                    color=line_color, linewidth=width, alpha=alpha, zorder=1,
@@ -457,14 +444,26 @@ def plot_passing_network(avg_positions, connections, team_name, ax, min_passes=3
                fontsize=10, color='yellow', ha='center', weight='bold',
                bbox=dict(boxstyle='round', facecolor='red', alpha=0.7))
     
-    max_passes = max([pos['passes'] for pos in avg_positions.values()]) if avg_positions else 1
-    
     for player_id, pos in avg_positions.items():
         x = pos['x'] * scale_x
         y = pos['y'] * scale_y
         passes = pos['passes']
+        player_xt = pos['xt']
         
-        size = max(400, min((passes / max_passes) * 2000, 2500))
+        # TAMAÑO basado en CANTIDAD DE PASES
+        size = max(400, min((passes / max_passes) * 2500, 3000))
+        
+        # COLOR basado en xT del jugador
+        if XT_AVAILABLE and player_xt > 0:
+            xt_norm = min(player_xt / max_xt_player, 1.0)
+            intensity = 0.4 + (xt_norm * 0.6)
+        else:
+            intensity = 0.7
+        
+        r = int(base_rgb[0] * intensity)
+        g = int(base_rgb[1] * intensity)
+        b = int(base_rgb[2] * intensity)
+        node_color = f'#{r:02x}{g:02x}{b:02x}'
         
         ax.scatter(x, y, s=size, c=node_color, edgecolors='white', 
                   linewidths=3, zorder=2, marker='o', alpha=0.95)
@@ -487,6 +486,9 @@ def plot_passing_network(avg_positions, connections, team_name, ax, min_passes=3
             path_effects.Stroke(linewidth=2, foreground='black'),
             path_effects.Normal()
         ])
+    
+    # Agregar leyenda
+    add_legend(ax, team_color)
     
     ax.set_title(f'{team_name} - Passing Network', 
                 fontsize=16, weight='bold', color='white', pad=15)
@@ -571,7 +573,7 @@ def process_json_file(json_path):
     
     if not passes_team1 and not passes_team2:
         st.error("❌ No se encontraron pases en el rango seleccionado")
-        st.info("💡 Intenta ajustar los filtros (período o rango de minutos)")
+        st.info("💡 Intenta ajustar los filtros")
         return
     
     players_team1 = get_player_names(match_data, team_ids[0])
@@ -598,11 +600,12 @@ def process_json_file(json_path):
         acc2 = (successful_passes_2 / total_passes_2 * 100) if total_passes_2 > 0 else 0
         st.metric("Precisión", f"{acc2:.1f}%")
     
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 10), facecolor='#0e1117')
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(24, 11), facecolor='#0e1117')
     
     plot_passing_network(positions1, connections1, teams[team_ids[0]], ax1, min_passes, team_color='red')
     plot_passing_network(positions2, connections2, teams[team_ids[1]], ax2, min_passes, team_color='orange')
     
+    plt.tight_layout()
     st.pyplot(fig)
     plt.close()
     
@@ -775,47 +778,36 @@ def process_json_file(json_path):
             st.dataframe(styled, use_container_width=True, hide_index=True)
 
 def load_matches_metadata(raw_dir, scope='global', country=None, competition=None):
-    """Carga metadata de partidos según el nivel de scope solicitado"""
+    """Carga metadata de partidos"""
     metadata_file = None
-    
     if scope == 'global':
         metadata_file = raw_dir / 'matches_metadata.json'
     elif scope == 'country' and country:
         metadata_file = raw_dir / country / 'matches_metadata.json'
     elif scope == 'competition' and country and competition:
         metadata_file = raw_dir / country / competition / 'matches_metadata.json'
-    
     if metadata_file and metadata_file.exists():
         try:
             with open(metadata_file, 'r', encoding='utf-8') as f:
                 metadata = json.load(f)
-            
             if metadata:
                 df = pd.DataFrame(metadata)
                 df['date'] = pd.to_datetime(df['date'])
-                
                 if 'filepath' in df.columns:
                     df['filepath'] = df['filepath'].str.replace('\\', '/', regex=False)
-                
                 return df.sort_values('date', ascending=False)
         except Exception as e:
             st.error(f"Error cargando metadata: {e}")
-    
     return None
 
 def show_passing_network_tab():
-    """Muestra la pestaña de análisis de redes de pases con sidebar"""
-    
+    """Muestra la pestaña de análisis de redes de pases"""
     st.markdown("### 🕸️ Passing Network Analysis")
-    st.markdown("**Comparación lado a lado de ambos equipos**")
-    
+    st.markdown("**Comparación lado a lado con 3 variables visuales**")
     data_scan = scan_data_directories()
     raw_dir = data_scan['raw_dir']
-    
     st.sidebar.markdown("## ⚙️ Configuración")
     st.sidebar.markdown("---")
-    
-    # FILE UPLOADER SIEMPRE VISIBLE
     st.sidebar.markdown("### 📤 Subir JSON Manual")
     uploaded_file = st.sidebar.file_uploader(
         "Arrastra un archivo JSON:",
@@ -823,70 +815,50 @@ def show_passing_network_tab():
         help="Sube un archivo JSON con datos OPTA / Stats Perform",
         key="manual_json_uploader"
     )
-    
     if uploaded_file is not None:
         with tempfile.NamedTemporaryFile(delete=False, suffix='.json', mode='w', encoding='utf-8') as tmp:
             tmp.write(uploaded_file.getvalue().decode('utf-8'))
             tmp_path = Path(tmp.name)
-        
         st.info(f"📄 Archivo subido: {uploaded_file.name}")
         process_json_file(tmp_path)
         return
-    
     st.sidebar.markdown("---")
-    
     global_metadata_file = raw_dir / 'matches_metadata.json'
-    
     if not global_metadata_file.exists():
         st.sidebar.error("⚠️ No hay metadata")
         st.sidebar.info("Ejecuta: `python generate_metadata.py`")
         st.info("💡 Usa el uploader de arriba para cargar un JSON manualmente")
         return
-    
     df_matches = load_matches_metadata(raw_dir, scope='global')
-    
     if df_matches is None or len(df_matches) == 0:
         st.sidebar.error("⚠️ No hay partidos")
         st.sidebar.info("Agrega JSONs y ejecuta: `python generate_metadata.py`")
         return
-    
-    # FILTROS EN SIDEBAR
     st.sidebar.markdown("### 🏆 Competición")
     competitions_list = sorted(df_matches['competition_full_name'].unique().tolist())
     selected_competition = st.sidebar.selectbox("Liga:", competitions_list, label_visibility="collapsed")
-    
     filtered_df = df_matches[df_matches['competition_full_name'] == selected_competition].copy()
-    
     st.sidebar.markdown("### 📅 Temporada")
     seasons = sorted(filtered_df['season'].unique().tolist(), reverse=True)
     selected_season = st.sidebar.selectbox("Season:", seasons, label_visibility="collapsed")
-    
     filtered_df = filtered_df[filtered_df['season'] == selected_season]
-    
     st.sidebar.markdown("### ⚽ Equipo")
     all_teams = set()
     for desc in filtered_df['description'].unique():
         teams = desc.split(' vs ')
         all_teams.update(teams)
-    
     teams_list = ['Todos'] + sorted(list(all_teams))
     selected_team = st.sidebar.selectbox("Team:", teams_list, label_visibility="collapsed")
-    
     if selected_team != 'Todos':
         filtered_df = filtered_df[filtered_df['description'].str.contains(selected_team, case=False, na=False)]
-    
     st.sidebar.markdown("### 🎯 Tipo de Partido")
     match_type = st.sidebar.radio("Match type:", ["Partido más reciente", "Partido específico"], label_visibility="collapsed")
-    
     st.sidebar.markdown("---")
     st.sidebar.metric("Partidos encontrados", len(filtered_df))
-    
     if len(filtered_df) == 0:
         st.warning("⚠️ No se encontraron partidos con los filtros aplicados")
         return
-    
     selected_match = None
-    
     if match_type == "Partido más reciente":
         selected_match = filtered_df.iloc[0]
         st.info(f"📅 **Partido más reciente:** {selected_match['description']} ({selected_match['date'].strftime('%d/%m/%Y')})")
@@ -899,10 +871,8 @@ def show_passing_network_tab():
             stage = f" | {row['stage']}" if row['stage'] else ''
             display_name = f"📅 {date_str} | {code}{stage} | {row['description']}"
             match_options[display_name] = row
-        
         selected_display = st.selectbox("Partido:", list(match_options.keys()), label_visibility="collapsed")
         selected_match = match_options[selected_display]
-    
     if selected_match is not None:
         col1, col2, col3, col4, col5 = st.columns(5)
         with col1:
@@ -916,11 +886,8 @@ def show_passing_network_tab():
             st.info(f"🏆 {code}")
         with col5:
             st.info(f"📊 {selected_match['season']}")
-        
         st.markdown("---")
-        
         selected_file = raw_dir / selected_match['filepath']
-        
         if selected_file.exists():
             process_json_file(selected_file)
         else:
