@@ -10,6 +10,18 @@ import numpy as np
 import sys
 import tempfile
 
+# Importar calculador de xT
+try:
+    from xt_calculator import calculate_player_xt, get_xt_color_intensity, add_xt_to_passes
+except ImportError:
+    # Fallback si no está disponible
+    def calculate_player_xt(passes_df):
+        return {}
+    def get_xt_color_intensity(xt, max_xt):
+        return 0.95
+    def add_xt_to_passes(passes):
+        return passes
+
 # Agregar carpeta Codigos al path para importar procesadores
 codigos_path = Path(__file__).parent / 'Codigos'
 if codigos_path.exists():
@@ -393,14 +405,20 @@ def calculate_pass_network_positions(passes, player_names, invert_coords=False):
     
     return avg_positions, connections
 
-def plot_passing_network(avg_positions, connections, team_name, ax, min_passes=3, team_color='cyan'):
-    """Visualiza la red de pases en una cancha"""
-    pitch = Pitch(pitch_type='custom', pitch_length=105, pitch_width=68,
+def plot_passing_network(avg_positions, connections, team_name, ax, min_passes=3, team_color='cyan', player_xt=None):
+    """Visualiza la red de pases en una cancha - VERSIÓN MEJORADA"""
+    # CAMBIO: Cancha más grande para mejor distribución
+    pitch = Pitch(pitch_type='custom', pitch_length=120, pitch_width=80,
                   line_color='white', pitch_color='#0a3d0a', linewidth=2)
     pitch.draw(ax=ax)
     
-    scale_x = 105 / 100
-    scale_y = 68 / 100
+    scale_x = 120 / 100
+    scale_y = 80 / 100
+    
+    # Obtener valores xT si están disponibles
+    if player_xt is None:
+        player_xt = {}
+    max_xt = max(player_xt.values()) if player_xt else 1
     
     # Colores por equipo - NUEVO: Rojo para team 1
     if team_color == 'red':
@@ -425,9 +443,9 @@ def plot_passing_network(avg_positions, connections, team_name, ax, min_passes=3
             x2 = avg_positions[receiver]['x'] * scale_x
             y2 = avg_positions[receiver]['y'] * scale_y
             
-            # Grosor muy visible proporcional al número de pases (estilo The Athletic)
-            width = max(2, min(count / 1.2, 12))  # Entre 2 y 12 (más ancho)
-            alpha = min(0.95, 0.4 + (count / 15))  # Entre 0.4 y 0.95
+            # CAMBIO: Líneas más finas y proporcionales
+            width = max(1, min(count / 2, 8))  # Entre 1 y 8 (más fino)
+            alpha = min(0.9, 0.3 + (count / 20))  # Entre 0.3 y 0.9
             
             ax.plot([x1, x2], [y1, y2], 
                    color=line_color, linewidth=width, alpha=alpha, zorder=1,
