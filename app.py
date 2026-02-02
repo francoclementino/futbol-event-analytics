@@ -124,5 +124,5 @@ def main():
 if __name__ == "__main__":
     main()
 
-# Última actualización: 26 Enero 2025 - Versión 1.3 SIN PLOTLY
+# Última actualización: 02 February 2026 14:06 - Versión 1.4 CON 3 VARIABLES VISUALES
 # Este archivo NO requiere plotly - usa solo matplotlib y mplsoccer
