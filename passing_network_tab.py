@@ -1,5 +1,5 @@
-# passing_network_tab.py - VERSIÓN FINAL CORREGIDA
-# Módulo de análisis de redes de pases con soporte multi-formato y file uploader
+# passing_network_tab.py - VERSIÓN MEJORADA
+# Módulo de análisis de redes de pases con soporte multi-formato y file uploader SIEMPRE VISIBLE
 import streamlit as st
 import pandas as pd
 import json
@@ -9,18 +9,6 @@ from mplsoccer import Pitch
 import numpy as np
 import sys
 import tempfile
-
-# Importar calculador de xT
-try:
-    from xt_calculator import calculate_player_xt, get_xt_color_intensity, add_xt_to_passes
-except ImportError:
-    # Fallback si no está disponible
-    def calculate_player_xt(passes_df):
-        return {}
-    def get_xt_color_intensity(xt, max_xt):
-        return 0.95
-    def add_xt_to_passes(passes):
-        return passes
 
 # Agregar carpeta Codigos al path para importar procesadores
 codigos_path = Path(__file__).parent / 'Codigos'
@@ -405,20 +393,14 @@ def calculate_pass_network_positions(passes, player_names, invert_coords=False):
     
     return avg_positions, connections
 
-def plot_passing_network(avg_positions, connections, team_name, ax, min_passes=3, team_color='cyan', player_xt=None):
-    """Visualiza la red de pases en una cancha - VERSIÓN MEJORADA"""
-    # CAMBIO: Cancha más grande para mejor distribución
-    pitch = Pitch(pitch_type='custom', pitch_length=120, pitch_width=80,
+def plot_passing_network(avg_positions, connections, team_name, ax, min_passes=3, team_color='cyan'):
+    """Visualiza la red de pases en una cancha"""
+    pitch = Pitch(pitch_type='custom', pitch_length=105, pitch_width=68,
                   line_color='white', pitch_color='#0a3d0a', linewidth=2)
     pitch.draw(ax=ax)
     
-    scale_x = 120 / 100
-    scale_y = 80 / 100
-    
-    # Obtener valores xT si están disponibles
-    if player_xt is None:
-        player_xt = {}
-    max_xt = max(player_xt.values()) if player_xt else 1
+    scale_x = 105 / 100
+    scale_y = 68 / 100
     
     # Colores por equipo - NUEVO: Rojo para team 1
     if team_color == 'red':
@@ -443,9 +425,9 @@ def plot_passing_network(avg_positions, connections, team_name, ax, min_passes=3
             x2 = avg_positions[receiver]['x'] * scale_x
             y2 = avg_positions[receiver]['y'] * scale_y
             
-            # CAMBIO: Líneas más finas y proporcionales
-            width = max(1, min(count / 2, 8))  # Entre 1 y 8 (más fino)
-            alpha = min(0.9, 0.3 + (count / 20))  # Entre 0.3 y 0.9
+            # Grosor muy visible proporcional al número de pases (estilo The Athletic)
+            width = max(2, min(count / 1.2, 12))  # Entre 2 y 12 (más ancho)
+            alpha = min(0.95, 0.4 + (count / 15))  # Entre 0.4 y 0.95
             
             ax.plot([x1, x2], [y1, y2], 
                    color=line_color, linewidth=width, alpha=alpha, zorder=1,
@@ -813,6 +795,8 @@ def load_matches_metadata(raw_dir, scope='global', country=None, competition=Non
     """
     Carga metadata de partidos según el nivel de scope solicitado.
     
+    CORRECCIÓN: Normaliza todos los paths a formato Unix (/)
+    
     Args:
         raw_dir: Ruta base de data/raw
         scope: 'global', 'country', o 'competition'
@@ -839,6 +823,11 @@ def load_matches_metadata(raw_dir, scope='global', country=None, competition=Non
             if metadata:
                 df = pd.DataFrame(metadata)
                 df['date'] = pd.to_datetime(df['date'])
+                
+                # CORRECCIÓN CRÍTICA: Normalizar paths a Unix format
+                if 'filepath' in df.columns:
+                    df['filepath'] = df['filepath'].str.replace('\\', '/', regex=False)
+                
                 return df.sort_values('date', ascending=False)
         except Exception as e:
             st.error(f"Error cargando metadata: {e}")
@@ -862,31 +851,25 @@ def show_passing_network_tab():
     st.sidebar.markdown("---")
     
     # ========================================
-    # NUEVO: FILE UPLOADER PRIORITARIO
+    # FILE UPLOADER SIEMPRE VISIBLE
     # ========================================
-    st.sidebar.markdown("### 📤 Subir JSON")
+    st.sidebar.markdown("### 📤 Subir JSON Manual")
     uploaded_file = st.sidebar.file_uploader(
-        "Arrastra un archivo JSON aquí:",
+        "Arrastra un archivo JSON:",
         type=['json'],
         help="Sube un archivo JSON con datos OPTA / Stats Perform",
-        key="json_uploader"
+        key="manual_json_uploader"
     )
     
     if uploaded_file is not None:
-        # Procesar archivo subido
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.json', mode='wb') as tmp:
-            tmp.write(uploaded_file.getvalue())
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.json', mode='w', encoding='utf-8') as tmp:
+            tmp.write(uploaded_file.getvalue().decode('utf-8'))
             tmp_path = Path(tmp.name)
         
-        st.sidebar.success(f"✅ Archivo: {uploaded_file.name}")
-        st.sidebar.markdown("---")
-        
-        # Procesar el JSON subido
+        st.info(f"📄 Archivo subido: {uploaded_file.name}")
         process_json_file(tmp_path)
         return
     
-    # Si no hay archivo subido, mostrar opciones de metadata
-    st.sidebar.info("💡 O selecciona de partidos guardados:")
     st.sidebar.markdown("---")
     
     # Verificar si existe metadata global
@@ -895,7 +878,7 @@ def show_passing_network_tab():
     if not global_metadata_file.exists():
         st.sidebar.error("⚠️ No hay metadata")
         st.sidebar.info("Ejecuta: `python generate_metadata.py`")
-        st.info("📤 **Sube un archivo JSON usando el sidebar** ⬅️")
+        st.info("💡 Usa el uploader de arriba para cargar un JSON manualmente")
         return
     
     # Cargar metadata global
@@ -904,7 +887,6 @@ def show_passing_network_tab():
     if df_matches is None or len(df_matches) == 0:
         st.sidebar.error("⚠️ No hay partidos")
         st.sidebar.info("Agrega JSONs y ejecuta: `python generate_metadata.py`")
-        st.info("📤 **Sube un archivo JSON usando el sidebar** ⬅️")
         return
     
     # ========================================
@@ -976,7 +958,6 @@ def show_passing_network_tab():
     
     if len(filtered_df) == 0:
         st.warning("⚠️ No se encontraron partidos con los filtros aplicados")
-        st.info("📤 **Sube un archivo JSON usando el sidebar** ⬅️")
         return
     
     selected_match = None
@@ -1028,15 +1009,10 @@ def show_passing_network_tab():
         
         st.markdown("---")
         
-        # FIX CRÍTICO: Construir path absoluto correctamente
+        # Procesar el partido seleccionado
         selected_file = raw_dir / selected_match['filepath']
         
-        # Verificar si el archivo existe
-        if not selected_file.exists():
-            st.error(f"❌ Archivo no encontrado en:")
-            st.code(str(selected_file))
-            st.info("📤 **Sube el archivo JSON usando el sidebar** ⬅️")
-            return
-        
-        # Procesar el partido seleccionado
-        process_json_file(selected_file)
+        if selected_file.exists():
+            process_json_file(selected_file)
+        else:
+            st.error(f"❌ Archivo no encontrado: {selected_file}")
